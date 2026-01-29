@@ -60,7 +60,7 @@ struct BackupStats {
     let totalSizeBytes: Int64
     let oldestBackup: Date?
     let newestBackup: Date?
-    let backupsBySheet: [UUID: Int]
+    let backupsByGoogleSheetId: [String: Int]
 
     var totalSizeFormatted: String {
         ByteCountFormatter.string(fromByteCount: totalSizeBytes, countStyle: .file)

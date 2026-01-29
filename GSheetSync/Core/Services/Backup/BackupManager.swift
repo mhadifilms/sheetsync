@@ -101,6 +101,11 @@ actor BackupManager {
         return backupIndex[configId] ?? []
     }
 
+    /// Get backups by Google Sheet ID (more reliable than config UUID which can change)
+    func getBackups(forGoogleSheetId sheetId: String) -> [BackupMetadata] {
+        return backupIndex.values.flatMap { $0 }.filter { $0.googleSheetId == sheetId }
+    }
+
     func getAllBackups() -> [BackupMetadata] {
         return backupIndex.values.flatMap { $0 }
     }
@@ -109,9 +114,10 @@ actor BackupManager {
         let allBackups = getAllBackups()
         let totalSize = allBackups.reduce(0) { $0 + $1.fileSizeBytes }
 
-        var backupsBySheet: [UUID: Int] = [:]
+        // Index by googleSheetId for reliable matching
+        var backupsByGoogleSheetId: [String: Int] = [:]
         for backup in allBackups {
-            backupsBySheet[backup.syncConfigurationId, default: 0] += 1
+            backupsByGoogleSheetId[backup.googleSheetId, default: 0] += 1
         }
 
         return BackupStats(
@@ -119,7 +125,7 @@ actor BackupManager {
             totalSizeBytes: totalSize,
             oldestBackup: allBackups.map(\.backupTime).min(),
             newestBackup: allBackups.map(\.backupTime).max(),
-            backupsBySheet: backupsBySheet
+            backupsByGoogleSheetId: backupsByGoogleSheetId
         )
     }
 
