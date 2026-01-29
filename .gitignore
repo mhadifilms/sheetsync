@@ -1,0 +1,45 @@
+# Xcode and local builds
+build/
+.build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+Package.resolved
+
+# Secrets (user must create locally from Secrets.example.txt)
+GSheetSync/Config/Secrets.swift
+
+# Example file should be committed (now .txt to avoid compilation)
+!GSheetSync/Config/Secrets.example.txt
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# IDE
+.idea/
+*.sublime-*
+.vscode/
+
+# Archives
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
