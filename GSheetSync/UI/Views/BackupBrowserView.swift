@@ -63,6 +63,11 @@ struct BackupBrowserView: View {
                         }
                     }
                     .tag(config.id)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selectedConfigId = config.id
+                        loadBackups(for: config.id)
+                    }
                 }
                 .listStyle(.sidebar)
                 .frame(minWidth: 150)
