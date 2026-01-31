@@ -75,7 +75,7 @@ struct MainPopoverView: View {
                     )
             }
 
-            Text("GSheet Sync")
+            Text("sheetsync")
                 .font(.headline)
                 .fontWeight(.semibold)
 
