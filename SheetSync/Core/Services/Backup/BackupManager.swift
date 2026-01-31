@@ -10,8 +10,8 @@ actor BackupManager {
 
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        backupDirectory = appSupport.appendingPathComponent("SheetSync/backups", isDirectory: true)
-        metadataFile = appSupport.appendingPathComponent("SheetSync/backup_index.json")
+        backupDirectory = appSupport.appendingPathComponent("sheetsync/backups", isDirectory: true)
+        metadataFile = appSupport.appendingPathComponent("sheetsync/backup_index.json")
 
         // Create directory if needed
         try? FileManager.default.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
