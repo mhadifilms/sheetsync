@@ -6,7 +6,7 @@ class ChangeDetector {
 
     init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        snapshotDirectory = appSupport.appendingPathComponent("GSheetSync/snapshots", isDirectory: true)
+        snapshotDirectory = appSupport.appendingPathComponent("SheetSync/snapshots", isDirectory: true)
 
         // Create directory if needed
         try? FileManager.default.createDirectory(at: snapshotDirectory, withIntermediateDirectories: true)

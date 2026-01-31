@@ -4,7 +4,7 @@ class TokenManager {
     nonisolated(unsafe) static let shared = TokenManager()
 
     private let keychainHelper = KeychainHelper.shared
-    private let tokenKey = "com.gsheetsync.authtoken"
+    private let tokenKey = "com.sheetsync.authtoken"
 
     private var cachedToken: AuthToken?
 

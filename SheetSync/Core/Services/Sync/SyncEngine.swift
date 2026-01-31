@@ -203,6 +203,8 @@ class SyncEngine: ObservableObject {
                     source: .remote
                 )
 
+                Logger.shared.debug("Detected \(remoteChanges.count) remote changes for \(config.googleSheetName)")
+
                 let localChanges: [CellChange]
                 if let localData = localData {
                     // SAFETY: Check if local file appears empty but baseline has data
@@ -224,9 +226,23 @@ class SyncEngine: ObservableObject {
                             baseline: storedSnapshot,
                             source: .local
                         )
+                        Logger.shared.debug("Detected \(localChanges.count) local changes for \(config.googleSheetName)")
                     }
                 } else {
+                    Logger.shared.debug("No local file found for \(config.googleSheetName)")
                     localChanges = []
+                }
+
+                // Early exit if no changes detected anywhere
+                if remoteChanges.isEmpty && localChanges.isEmpty {
+                    Logger.shared.debug("No changes detected for \(config.googleSheetName) - skipping merge")
+                    task.state.status = .idle
+                    task.state.lastSyncTime = Date()
+                    task.state.nextSyncTime = Date().addingTimeInterval(config.syncFrequency)
+                    task.state.lastError = nil
+                    AppState.shared.updateSyncState(for: config.id, state: task.state)
+                    lastSyncTimes[config.id] = Date()
+                    return
                 }
 
                 // Get modification times for conflict resolution
@@ -277,11 +293,17 @@ class SyncEngine: ObservableObject {
 
                 // Step 7: Apply changes
                 if !resolution.changesToUpload.isEmpty {
+                    Logger.shared.info("Uploading \(resolution.changesToUpload.count) changes to Google Sheets for \(config.googleSheetName)")
                     try await uploadChanges(config, changes: resolution.changesToUpload)
+                } else {
+                    Logger.shared.debug("No changes to upload for \(config.googleSheetName)")
                 }
 
                 if resolution.hasLocalUpdates {
+                    Logger.shared.info("Writing \(remoteChanges.count) remote changes to local file for \(config.googleSheetName)")
                     try await writeLocalFile(config, data: resolution.mergedData, conflicts: [])
+                } else {
+                    Logger.shared.debug("Local file already up to date for \(config.googleSheetName)")
                 }
 
                 // Step 8: Update snapshot

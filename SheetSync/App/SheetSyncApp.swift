@@ -2,7 +2,7 @@ import SwiftUI
 import ServiceManagement
 
 @main
-struct GSheetSyncApp: App {
+struct SheetSyncApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState.shared
 
@@ -12,7 +12,7 @@ struct GSheetSyncApp: App {
                 .environmentObject(appState)
         } label: {
             Label {
-                Text("GSheet")
+                Text("SheetSync")
             } icon: {
                 Image(systemName: "tablecells")
             }
