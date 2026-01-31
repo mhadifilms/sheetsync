@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to SheetSync will be documented in this file.
+All notable changes to sheetsync will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-01-31
 
 ### Added
-- Initial release of SheetSync
+- Initial release of sheetsync
 - Menu bar app for syncing Google Sheets to local files
 - Bidirectional sync between Google Sheets and local Excel/CSV/JSON files
 - Cell-by-cell change detection using SHA256 hashing

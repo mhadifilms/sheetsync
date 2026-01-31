@@ -4,14 +4,14 @@
 set -e
 
 # Configuration
-APP_NAME="SheetSync"
+APP_NAME="SheetSync"  # Internal app bundle name (must match Info.plist)
 APP_BUNDLE="build/${APP_NAME}.app"
-DMG_NAME="SheetSync"
+DMG_NAME="sheetsync"  # Public-facing DMG name
 VERSION=$(grep -A1 "CFBundleShortVersionString" SheetSync/App/Info.plist | tail -1 | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
 DMG_FILE="build/${DMG_NAME}-${VERSION}.dmg"
-VOLUME_NAME="${APP_NAME} ${VERSION}"
+VOLUME_NAME="sheetsync ${VERSION}"
 
-echo "Building ${APP_NAME} v${VERSION}..."
+echo "Building sheetsync v${VERSION}..."
 
 # Quit existing app if running
 pkill -x sheetsync 2>/dev/null || true
@@ -67,10 +67,10 @@ ln -s /Applications "${DMG_TEMP}/Applications"
 
 # Create a styled DMG background (optional, simple text file)
 cat > "${DMG_TEMP}/.DS_Store_instructions.txt" << EOF
-To install ${APP_NAME}:
-1. Drag ${APP_NAME}.app to the Applications folder
+To install sheetsync:
+1. Drag SheetSync.app to the Applications folder
 2. Eject this disk image
-3. Launch ${APP_NAME} from your Applications folder
+3. Launch SheetSync from your Applications folder
 EOF
 
 # Remove any existing DMG

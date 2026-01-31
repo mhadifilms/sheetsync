@@ -56,9 +56,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref }}
-          release_name: SheetSync ${{ steps.get_version.outputs.version }}
+          release_name: sheetsync ${{ steps.get_version.outputs.version }}
           body: |
-            ## SheetSync v${{ steps.get_version.outputs.version }}
+            ## sheetsync v${{ steps.get_version.outputs.version }}
 
             A minimalist macOS menu bar app that syncs Google Sheets to local Excel files.
 
@@ -90,13 +90,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/SheetSync-${{ steps.get_version.outputs.version }}.dmg
-          asset_name: SheetSync-${{ steps.get_version.outputs.version }}.dmg
+          asset_path: build/sheetsync-${{ steps.get_version.outputs.version }}.dmg
+          asset_name: sheetsync-${{ steps.get_version.outputs.version }}.dmg
           asset_content_type: application/octet-stream
 
       - name: Upload to artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SheetSync-${{ steps.get_version.outputs.version }}-dmg
-          path: build/SheetSync-${{ steps.get_version.outputs.version }}.dmg
+          name: sheetsync-${{ steps.get_version.outputs.version }}-dmg
+          path: build/sheetsync-${{ steps.get_version.outputs.version }}.dmg
           retention-days: 30
