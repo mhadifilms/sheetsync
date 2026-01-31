@@ -1,6 +1,6 @@
 # Google Cloud Console Setup Guide
 
-This guide walks you through creating OAuth credentials for GSheet Sync.
+This guide walks you through creating OAuth credentials for sheetsync.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ This guide walks you through creating OAuth credentials for GSheet Sync.
 2. Click the project dropdown at the top of the page
 3. Click **"New Project"**
 4. Enter project details:
-   - **Project name:** `GSheet Sync` (or any name you prefer)
+   - **Project name:** `sheetsync` (or any name you prefer)
    - **Organization:** Leave as default
 5. Click **"Create"**
 6. Wait for the project to be created, then select it from the dropdown
@@ -41,7 +41,7 @@ This guide walks you through creating OAuth credentials for GSheet Sync.
 4. Fill in the required fields:
 
 ### App Information
-- **App name:** `GSheet Sync`
+- **App name:** `sheetsync`
 - **User support email:** Your email address
 - **App logo:** (Optional)
 
@@ -80,7 +80,7 @@ This guide walks you through creating OAuth credentials for GSheet Sync.
 2. Click **"Create Credentials"** → **"OAuth client ID"**
 3. Configure the OAuth client:
    - **Application type:** `Desktop app`
-   - **Name:** `GSheet Sync macOS`
+   - **Name:** `sheetsync macOS`
 4. Click **"Create"**
 5. A dialog will show your credentials:
    - **Client ID:** Copy this (looks like: `123456789-xxxx.apps.googleusercontent.com`)
@@ -91,14 +91,14 @@ This guide walks you through creating OAuth credentials for GSheet Sync.
 
 1. Copy the example secrets file:
    ```bash
-   cp GSheetSync/Config/Secrets.example.txt GSheetSync/Config/Secrets.swift
+   cp SheetSync/Config/Secrets.example.txt SheetSync/Config/Secrets.swift
    ```
 
-2. Edit `GSheetSync/Config/Secrets.swift`:
+2. Edit `SheetSync/Config/Secrets.swift`:
    ```swift
    enum Secrets {
        static let googleClientId = "YOUR_CLIENT_ID_HERE.apps.googleusercontent.com"
-       static let googleRedirectScheme = "com.gsheetsync.app"
+       static let googleRedirectScheme = "com.sheetsync.app"
    }
    ```
 

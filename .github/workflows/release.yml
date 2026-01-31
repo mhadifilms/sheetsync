@@ -65,8 +65,8 @@ jobs:
             ### Installation
             1. Download the DMG file below
             2. Open the DMG
-            3. Drag SheetSync.app to your Applications folder
-            4. Launch SheetSync from Applications
+            3. Drag sheetsync.app to your Applications folder
+            4. Launch sheetsync from Applications
 
             ### Requirements
             - macOS 14.0 (Sonoma) or later

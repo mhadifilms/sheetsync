@@ -1,4 +1,4 @@
-# SheetSync
+# sheetsync
 
 A minimalist macOS menu bar app that syncs Google Sheets to local Excel files.
 
@@ -102,7 +102,7 @@ When the same cell is modified both locally and in Google Sheets:
 
 ### Backup System
 
-- **Location:** `~/Library/Application Support/SheetSync/backups/`
+- **Location:** `~/Library/Application Support/sheetsync/backups/`
 - **Frequency:** Every 5 hours (configurable), only if changes detected
 - **Automatic:** Created before resolving conflicts
 - **Format:** Same as your sync file (XLSX/CSV/JSON)
