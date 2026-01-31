@@ -5,17 +5,17 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>GSheet Sync</string>
+    <string>SheetSync</string>
     <key>CFBundleExecutable</key>
-    <string>GSheetSync</string>
+    <string>sheetsync</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
-    <string>com.gsheetsync.app</string>
+    <string>com.sheetsync.app</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>GSheet Sync</string>
+    <string>SheetSync</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

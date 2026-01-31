@@ -1,30 +1,30 @@
 #!/bin/bash
-# Build script for GSheet Sync
+# Build script for SheetSync
 
 set -e
 
 # Quit existing app if running
-pkill -x GSheetSync 2>/dev/null || true
+pkill -x sheetsync 2>/dev/null || true
 
-echo "Building GSheet Sync..."
+echo "Building SheetSync..."
 
 # Build release
 swift build -c release
 
 # Create app bundle structure
-mkdir -p build/GSheetSync.app/Contents/MacOS
-mkdir -p build/GSheetSync.app/Contents/Resources
+mkdir -p build/SheetSync.app/Contents/MacOS
+mkdir -p build/SheetSync.app/Contents/Resources
 
 # Copy executable
-cp .build/release/GSheetSync build/GSheetSync.app/Contents/MacOS/
+cp .build/release/sheetsync build/SheetSync.app/Contents/MacOS/
 
 # Copy Info.plist
-cp GSheetSync/App/Info.plist build/GSheetSync.app/Contents/
+cp SheetSync/App/Info.plist build/SheetSync.app/Contents/
 
 # Create PkgInfo
-echo -n "APPL????" > build/GSheetSync.app/Contents/PkgInfo
+echo -n "APPL????" > build/SheetSync.app/Contents/PkgInfo
 
-echo "Build complete: build/GSheetSync.app"
+echo "Build complete: build/SheetSync.app"
 
 # Open the app
-open build/GSheetSync.app
+open build/SheetSync.app

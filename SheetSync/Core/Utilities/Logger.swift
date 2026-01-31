@@ -4,7 +4,7 @@ import os.log
 struct Logger: Sendable {
     static let shared = Logger()
 
-    private let logger = os.Logger(subsystem: "com.gsheetsync.app", category: "GSheetSync")
+    private let logger = os.Logger(subsystem: "com.sheetsync.app", category: "SheetSync")
 
     func debug(_ message: String) {
         logger.debug("\(message, privacy: .public)")

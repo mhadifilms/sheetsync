@@ -1,14 +1,16 @@
 import Foundation
 
 class ConflictResolver {
-    /// Resolve conflicts using last-write-wins strategy
+    /// Resolve conflicts using a simple strategy: latest change takes priority
+    /// On first sync: remote is always authoritative
+    /// On subsequent syncs: changes from both sides are merged, with remote winning conflicts
     /// - Parameters:
     ///   - localChanges: Changes detected in local file vs baseline
     ///   - remoteChanges: Changes detected in remote vs baseline
     ///   - localData: Current local file data
     ///   - remoteData: Current remote data
-    ///   - localModTime: Local file modification time
-    ///   - remoteModTime: Remote spreadsheet modification time
+    ///   - localModTime: Local file modification time (used for conflict logging only)
+    ///   - remoteModTime: Remote spreadsheet modification time (unused - API doesn't provide this)
     func resolve(
         localChanges: [CellChange],
         remoteChanges: [CellChange],
@@ -21,15 +23,7 @@ class ConflictResolver {
         var conflicts: [ConflictInfo] = []
         var mergedData = remoteData
 
-        // Determine winner based on timestamps (default to remote if unknown)
-        let localWins: Bool
-        if let localTime = localModTime, let remoteTime = remoteModTime {
-            localWins = localTime > remoteTime
-        } else {
-            localWins = false  // Default: remote wins
-        }
-
-        // Build lookup for remote changes
+        // Build lookup for remote changes to detect conflicts
         var remoteChangeMap: [String: CellChange] = [:]
         for change in remoteChanges {
             let key = "\(change.sheetTab):\(change.row):\(change.column)"
@@ -43,6 +37,7 @@ class ConflictResolver {
         for localChange in localChanges {
             // Skip deletions - only upload additions and modifications
             if localChange.changeType == .deleted {
+                Logger.shared.debug("Skipping local deletion at \(localChange.cellReference) - deletions must be done in Google Sheets")
                 continue
             }
 
@@ -50,7 +45,8 @@ class ConflictResolver {
 
             if let remoteChange = remoteChangeMap[key] {
                 // Conflict: same cell changed both locally and remotely
-                // Strategy: Last-write-wins
+                // Strategy: Remote wins (safer - preserves cloud data)
+                // Backup will be created before overwriting local changes
                 let conflict = ConflictInfo(
                     sheetTab: localChange.sheetTab,
                     row: localChange.row,
@@ -58,15 +54,13 @@ class ConflictResolver {
                     localValue: localChange.newValue,
                     remoteValue: remoteChange.newValue,
                     timestamp: Date(),
-                    winner: localWins ? .local : .remote
+                    winner: .remote  // Remote always wins conflicts
                 )
                 conflicts.append(conflict)
 
-                if localWins {
-                    // Local wins - upload local change
-                    changesToUpload.append(localChange)
-                }
-                // If remote wins, don't upload - remote value stays
+                Logger.shared.info("Conflict at \(localChange.cellReference): local '\(localChange.newValue ?? "")' vs remote '\(remoteChange.newValue ?? "")' - remote wins")
+
+                // Don't upload local change - remote value stays
 
             } else {
                 // No conflict - upload local change
@@ -74,9 +68,9 @@ class ConflictResolver {
             }
         }
 
-        // Apply local values to merged data
+        // Apply local changes that won (no conflicts) to merged data
         for change in changesToUpload {
-            if var tabData = mergedData.tabs[change.sheetTab] {
+            if let tabData = mergedData.tabs[change.sheetTab] {
                 var data = tabData.data
 
                 // Ensure row exists
@@ -100,7 +94,8 @@ class ConflictResolver {
         }
 
         // Determine if local file needs updating
-        let hasLocalUpdates = !remoteChanges.isEmpty || !conflicts.isEmpty
+        // Local needs update only if there are remote changes (since remote data differs from baseline)
+        let hasLocalUpdates = !remoteChanges.isEmpty
 
         return ConflictResolution(
             changesToUpload: changesToUpload,

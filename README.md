@@ -1,4 +1,4 @@
-# GSheet Sync
+# SheetSync
 
 A minimalist macOS menu bar app that syncs Google Sheets to local Excel files.
 
@@ -8,7 +8,7 @@ A minimalist macOS menu bar app that syncs Google Sheets to local Excel files.
 - **Bidirectional Sync** - Changes flow both ways between Google Sheets and local files
 - **Cell-by-Cell Updates** - Only changed cells are updated, not full sheet rewrites
 - **Automatic Backups** - Configurable backups every 5 hours (or custom interval)
-- **Conflict Resolution** - Conflicts are appended, never overwritten
+- **Conflict Resolution** - Remote changes take priority, with backups created before overwriting
 - **Launch at Login** - Optional auto-start when you log in
 - **Multiple Formats** - Supports XLSX (Excel), CSV, and JSON
 
@@ -23,8 +23,8 @@ A minimalist macOS menu bar app that syncs Google Sheets to local Excel files.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/gsheet-sync.git
-cd gsheet-sync
+git clone https://github.com/yourusername/sheetsync.git
+cd sheetsync
 ```
 
 ### 2. Create Google OAuth Credentials
@@ -41,15 +41,15 @@ See [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md) for detailed instructions with 
 ### 3. Configure Secrets
 
 ```bash
-cp GSheetSync/Config/Secrets.example.txt GSheetSync/Config/Secrets.swift
+cp SheetSync/Config/Secrets.example.txt SheetSync/Config/Secrets.swift
 ```
 
-Edit `GSheetSync/Config/Secrets.swift` and replace `YOUR_CLIENT_ID` with your actual Client ID:
+Edit `SheetSync/Config/Secrets.swift` and replace `YOUR_CLIENT_ID` with your actual Client ID:
 
 ```swift
 enum Secrets {
     static let googleClientId = "123456789-xxxx.apps.googleusercontent.com"
-    static let googleRedirectScheme = "com.gsheetsync.app"
+    static let googleRedirectScheme = "com.sheetsync.app"
 }
 ```
 
@@ -65,10 +65,10 @@ Then press Cmd+R to build and run.
 **Using Command Line:**
 ```bash
 ./build.sh
-open build/GSheetSync.app
+open build/SheetSync.app
 ```
 
-This creates a proper macOS app bundle in `build/GSheetSync.app`.
+This creates a proper macOS app bundle in `build/SheetSync.app`.
 
 ## Usage
 
@@ -84,27 +84,29 @@ This creates a proper macOS app bundle in `build/GSheetSync.app`.
 
 ### Sync Process
 
-1. **Fetch** - Downloads current state from Google Sheets
-2. **Compare** - Detects changes using SHA256 hashes of each cell
-3. **Merge** - Combines local and remote changes
-4. **Resolve** - Handles conflicts (append strategy)
-5. **Update** - Pushes changes to both local file and Google Sheets
+1. **First Sync** - Remote (Google Sheets) data overwrites local file to establish baseline
+2. **Fetch** - Downloads current state from Google Sheets
+3. **Compare** - Detects changes using SHA256 hashes of each cell
+4. **Merge** - Combines local and remote changes
+5. **Resolve** - Handles conflicts (remote wins, local backed up)
+6. **Update** - Pushes changes to both local file and Google Sheets
 
 ### Conflict Resolution
 
 When the same cell is modified both locally and in Google Sheets:
-- Your local change is kept in place
-- The Google Sheets version is appended as a new row with a conflict marker
-- Format: `[CONFLICT - Google - timestamp] | values...`
-
-You manually review and resolve conflicts by editing the file.
+- Remote (Google Sheets) value takes priority
+- Local version is backed up automatically before overwriting
+- User is notified of conflicts resolved
+- This prevents data loss while keeping cloud as source of truth
 
 ### Backup System
 
-- **Location:** `~/Library/Application Support/GSheetSync/backups/`
+- **Location:** `~/Library/Application Support/SheetSync/backups/`
 - **Frequency:** Every 5 hours (configurable), only if changes detected
+- **Automatic:** Created before resolving conflicts
 - **Format:** Same as your sync file (XLSX/CSV/JSON)
 - **Cache Limit:** 10GB default, configurable
+- **Verification:** Checksums ensure backup integrity
 
 ## Configuration
 
@@ -165,7 +167,7 @@ If rate limited, the app waits automatically and retries.
 ### Project Structure
 
 ```
-GSheetSync/
+SheetSync/
 ├── App/                    # App entry point, AppDelegate
 ├── Core/
 │   ├── Models/            # Data models
@@ -186,7 +188,7 @@ GSheetSync/
 
 ### Key Files
 
-- `GSheetSyncApp.swift` - App entry point
+- `SheetSyncApp.swift` - App entry point
 - `SyncEngine.swift` - Main sync orchestrator
 - `GoogleAuthService.swift` - OAuth handling
 - `GoogleSheetsAPIClient.swift` - API wrapper

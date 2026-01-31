@@ -76,6 +76,7 @@ enum SyncError: Error, LocalizedError {
     case permissionRevoked
     case conflictDetected(Int)
     case sheetTooLarge(rows: Int, cols: Int)
+    case backupFailed(String)
     case unknown(Error)
 
     var errorDescription: String? {
@@ -116,6 +117,8 @@ enum SyncError: Error, LocalizedError {
             return "\(count) conflict(s) detected"
         case .sheetTooLarge(let rows, let cols):
             return "Sheet too large (\(rows) rows, \(cols) cols) - may be slow"
+        case .backupFailed(let message):
+            return "Backup failed: \(message)"
         case .unknown(let error):
             return "Unknown error: \(error.localizedDescription)"
         }

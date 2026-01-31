@@ -2,28 +2,28 @@
 import PackageDescription
 
 let package = Package(
-    name: "GSheetSync",
+    name: "sheetsync",
     platforms: [
         .macOS(.v26)
     ],
     products: [
-        .executable(name: "GSheetSync", targets: ["GSheetSync"])
+        .executable(name: "sheetsync", targets: ["sheetsync"])
     ],
     dependencies: [
         .package(url: "https://github.com/CoreOffice/CoreXLSX.git", from: "0.14.0")
     ],
     targets: [
         .executableTarget(
-            name: "GSheetSync",
+            name: "sheetsync",
             dependencies: [
                 "CoreXLSX"
             ],
-            path: "GSheetSync"
+            path: "SheetSync"
         ),
         .testTarget(
-            name: "GSheetSyncTests",
-            dependencies: ["GSheetSync"],
-            path: "GSheetSyncTests"
+            name: "sheetsync-tests",
+            dependencies: ["sheetsync"],
+            path: "SheetSyncTests"
         )
     ]
 )
