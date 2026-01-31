@@ -64,11 +64,12 @@ Then press Cmd+R to build and run.
 
 **Using Command Line:**
 ```bash
+# Development build (quick)
 ./build.sh
-open build/SheetSync.app
-```
 
-This creates a proper macOS app bundle in `build/SheetSync.app`.
+# Release build with DMG
+./release.sh
+```
 
 ## Usage
 

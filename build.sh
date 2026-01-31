@@ -25,6 +25,5 @@ cp SheetSync/App/Info.plist build/SheetSync.app/Contents/
 echo -n "APPL????" > build/SheetSync.app/Contents/PkgInfo
 
 echo "Build complete: build/SheetSync.app"
-
-# Open the app
-open build/SheetSync.app
+echo ""
+echo "To run: open build/SheetSync.app"
