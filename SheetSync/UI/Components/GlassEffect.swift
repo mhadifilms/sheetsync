@@ -7,22 +7,22 @@ import SwiftUI
 extension View {
     /// Applies the Liquid Glass effect with a capsule shape (default)
     func liquidGlass() -> some View {
-        self.glassEffect(.regular, in: .capsule)
+        self.background(.ultraThinMaterial, in: Capsule())
     }
 
     /// Applies the Liquid Glass effect with a rounded rectangle shape
     func liquidGlassRounded(_ cornerRadius: CGFloat = 16) -> some View {
-        self.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        self.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))
     }
 
     /// Applies the Liquid Glass effect with a circle shape
     func liquidGlassCircle() -> some View {
-        self.glassEffect(.regular, in: .circle)
+        self.background(.ultraThinMaterial, in: Circle())
     }
 
     /// Applies a clear variant for media-rich backgrounds
     func liquidGlassClear(cornerRadius: CGFloat = 16) -> some View {
-        self.glassEffect(.clear, in: .rect(cornerRadius: cornerRadius))
+        self.background(.thinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))
     }
 }
 
@@ -35,7 +35,7 @@ struct GlassCard<Content: View>: View {
 
     var body: some View {
         content()
-            .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))
             .tint(tint)
     }
 }

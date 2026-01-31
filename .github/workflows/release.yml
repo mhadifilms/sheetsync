@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.2"
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Build DMG
+        run: |
+          chmod +x build-dmg.sh
+          ./build-dmg.sh
+
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: List build artifacts
+        run: |
+          ls -lh build/
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref }}
+          release_name: SheetSync ${{ steps.get_version.outputs.version }}
+          body: |
+            ## SheetSync v${{ steps.get_version.outputs.version }}
+
+            A minimalist macOS menu bar app that syncs Google Sheets to local Excel files.
+
+            ### Installation
+            1. Download the DMG file below
+            2. Open the DMG
+            3. Drag SheetSync.app to your Applications folder
+            4. Launch SheetSync from Applications
+
+            ### Requirements
+            - macOS 14.0 (Sonoma) or later
+            - Google account
+
+            ### First-time Setup
+            1. Click the menu bar icon
+            2. Sign in with Google
+            3. Add your first sync
+
+            For detailed setup instructions, see the [README](https://github.com/${{ github.repository }}/blob/main/README.md).
+
+            ### Changes
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+          draft: false
+          prerelease: false
+
+      - name: Upload DMG
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: build/SheetSync-${{ steps.get_version.outputs.version }}.dmg
+          asset_name: SheetSync-${{ steps.get_version.outputs.version }}.dmg
+          asset_content_type: application/octet-stream
+
+      - name: Upload to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SheetSync-${{ steps.get_version.outputs.version }}-dmg
+          path: build/SheetSync-${{ steps.get_version.outputs.version }}.dmg
+          retention-days: 30

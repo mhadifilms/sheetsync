@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "sheetsync",
     platforms: [
-        .macOS(.v26)
+        .macOS(.v14)
     ],
     products: [
         .executable(name: "sheetsync", targets: ["sheetsync"])
