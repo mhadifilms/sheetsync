@@ -5,10 +5,11 @@ set -e
 
 # Configuration
 APP_NAME="sheetsync"  # App bundle name
-APP_BUNDLE="build/${APP_NAME}.app"
+DIST_DIR=".build/dist"
+APP_BUNDLE="${DIST_DIR}/${APP_NAME}.app"
 DMG_NAME="sheetsync"  # DMG name
 VERSION=$(grep -A1 "CFBundleShortVersionString" SheetSync/App/Info.plist | tail -1 | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
-DMG_FILE="build/${DMG_NAME}-${VERSION}.dmg"
+DMG_FILE="${DIST_DIR}/${DMG_NAME}-${VERSION}.dmg"
 VOLUME_NAME="sheetsync ${VERSION}"
 
 echo "Building sheetsync v${VERSION}..."
@@ -16,8 +17,8 @@ echo "Building sheetsync v${VERSION}..."
 # Quit existing app if running
 pkill -x sheetsync 2>/dev/null || true
 
-# Clean previous builds
-rm -rf build/
+# Clean previous dist builds (keep .build/release and .build/debug)
+rm -rf "${DIST_DIR}"
 
 # Build release
 echo "Compiling release build..."
@@ -56,7 +57,7 @@ fi
 echo "Creating DMG..."
 
 # Create temporary directory for DMG contents
-DMG_TEMP="build/dmg_temp"
+DMG_TEMP="${DIST_DIR}/dmg_temp"
 mkdir -p "${DMG_TEMP}"
 
 # Copy app to temporary directory

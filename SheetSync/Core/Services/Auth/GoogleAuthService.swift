@@ -111,11 +111,16 @@ class GoogleAuthService: NSObject, ObservableObject {
 
     private func startAuthSession(url: URL) async throws -> String {
         let callbackScheme = Secrets.googleRedirectScheme
-        return try await withCheckedThrowingContinuation { continuation in
-            authSession = ASWebAuthenticationSession(
+
+        // Store self reference for presentation context
+        let presentationProvider = self
+
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            let session = ASWebAuthenticationSession(
                 url: url,
                 callbackURLScheme: callbackScheme
-            ) { [weak self] callbackURL, error in
+            ) { @Sendable callbackURL, error in
+                // This callback runs on a background thread - @Sendable opts out of actor isolation
                 if let error = error {
                     if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
                         continuation.resume(throwing: AuthError.userCancelled)
@@ -135,9 +140,10 @@ class GoogleAuthService: NSObject, ObservableObject {
                 continuation.resume(returning: code)
             }
 
-            authSession?.presentationContextProvider = self
-            authSession?.prefersEphemeralWebBrowserSession = false
-            authSession?.start()
+            self.authSession = session
+            session.presentationContextProvider = presentationProvider
+            session.prefersEphemeralWebBrowserSession = false
+            session.start()
         }
     }
 
@@ -241,7 +247,40 @@ class GoogleAuthService: NSObject, ObservableObject {
 
 extension GoogleAuthService: ASWebAuthenticationPresentationContextProviding {
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
+        // For menu bar apps (LSUIElement), we need a valid anchor for ASWebAuthenticationSession.
+        // The MenuBarExtra popover window should be available when the user clicks sign in.
+
+        // First, try to find any existing window (the MenuBarExtra popover)
+        if let window = NSApp.windows.first(where: { $0.isVisible }) {
+            return window
+        }
+
+        // Fallback to key window
+        if let keyWindow = NSApp.keyWindow {
+            return keyWindow
+        }
+
+        // Last resort: return the first available window or the main screen's frame
+        // This creates a minimal anchor that won't interfere with the menu bar app
+        if let window = NSApp.windows.first {
+            return window
+        }
+
+        // Final fallback: create a transparent, non-activating anchor window
+        let anchor = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: true
+        )
+        anchor.isReleasedWhenClosed = false
+        anchor.level = .normal
+        anchor.backgroundColor = .clear
+        anchor.isOpaque = false
+        anchor.hasShadow = false
+        anchor.ignoresMouseEvents = true
+        anchor.collectionBehavior = [.transient, .ignoresCycle]
+        return anchor
     }
 }
 

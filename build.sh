@@ -11,19 +11,19 @@ echo "Building SheetSync..."
 # Build release
 swift build -c release
 
-# Create app bundle structure
-mkdir -p build/sheetsync.app/Contents/MacOS
-mkdir -p build/sheetsync.app/Contents/Resources
+# Create app bundle structure in .build/
+mkdir -p .build/sheetsync.app/Contents/MacOS
+mkdir -p .build/sheetsync.app/Contents/Resources
 
 # Copy executable
-cp .build/release/sheetsync build/sheetsync.app/Contents/MacOS/
+cp .build/release/sheetsync .build/sheetsync.app/Contents/MacOS/
 
 # Copy Info.plist
-cp SheetSync/App/Info.plist build/sheetsync.app/Contents/
+cp SheetSync/App/Info.plist .build/sheetsync.app/Contents/
 
 # Create PkgInfo
-echo -n "APPL????" > build/sheetsync.app/Contents/PkgInfo
+echo -n "APPL????" > .build/sheetsync.app/Contents/PkgInfo
 
-echo "Build complete: build/sheetsync.app"
+echo "Build complete: .build/sheetsync.app"
 echo ""
-echo "To run: open build/sheetsync.app"
+echo "To run: open .build/sheetsync.app"

@@ -14,7 +14,7 @@ Packages/
 Package.resolved
 
 # Secrets (user must create locally from Secrets.example.txt)
-GSheetSync/Config/Secrets.swift
+SheetSync/Config/Secrets.swift
 
 # Example file should be committed (now .txt to avoid compilation)
 !GSheetSync/Config/Secrets.example.txt
