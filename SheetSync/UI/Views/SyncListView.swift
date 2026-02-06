@@ -74,6 +74,14 @@ struct SyncItemRow: View {
                 .help("Sync now")
 
                 Button {
+                    openGoogleSheet()
+                } label: {
+                    LucideIcon(AppIcon.externalLink, size: 12, color: .primary)
+                }
+                .buttonStyle(.glassIcon(size: 24))
+                .help("Open in Google Sheets")
+
+                Button {
                     openLocalFile()
                 } label: {
                     LucideIcon(AppIcon.folder, size: 12, color: .primary)
@@ -141,6 +149,11 @@ struct SyncItemRow: View {
             configuration.fullLocalPath.path,
             inFileViewerRootedAtPath: configuration.localFilePath.path
         )
+    }
+
+    private func openGoogleSheet() {
+        let url = URL(string: "https://docs.google.com/spreadsheets/d/\(configuration.googleSheetId)")!
+        NSWorkspace.shared.open(url)
     }
 
     private func openSettings() {

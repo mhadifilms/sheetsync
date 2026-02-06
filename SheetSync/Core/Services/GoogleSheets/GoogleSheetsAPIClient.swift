@@ -4,14 +4,15 @@ import Foundation
 class GoogleSheetsAPIClient: ObservableObject {
     static let shared = GoogleSheetsAPIClient()
 
-    private var accessToken: String?
     private let rateLimiter = RateLimiter()
+    private let authService = GoogleAuthService.shared
 
     private let baseURL = "https://sheets.googleapis.com/v4/spreadsheets"
     private let driveBaseURL = "https://www.googleapis.com/drive/v3/files"
 
+    // Legacy method for compatibility - no longer stores token
     func setAccessToken(_ token: String) {
-        self.accessToken = token
+        // Token is now fetched fresh before each request via authService
     }
 
     // MARK: - List Spreadsheets
@@ -42,7 +43,7 @@ class GoogleSheetsAPIClient: ObservableObject {
         guard let url = components.url else {
             throw SyncError.apiError(400, "Invalid URL for listing spreadsheets")
         }
-        let request = try buildRequest(url: url)
+        let request = try await buildRequest(url: url)
         return try await performRequest(request)
     }
 
@@ -61,7 +62,7 @@ class GoogleSheetsAPIClient: ObservableObject {
         guard let url = components.url else {
             throw SyncError.apiError(400, "Invalid URL for spreadsheet")
         }
-        let request = try buildRequest(url: url)
+        let request = try await buildRequest(url: url)
         return try await performRequest(request)
     }
 
@@ -82,7 +83,7 @@ class GoogleSheetsAPIClient: ObservableObject {
         guard let url = components.url else {
             throw SyncError.apiError(400, "Invalid URL for values request")
         }
-        let request = try buildRequest(url: url)
+        let request = try await buildRequest(url: url)
         return try await performRequest(request)
     }
 
@@ -100,7 +101,7 @@ class GoogleSheetsAPIClient: ObservableObject {
         guard let url = components.url else {
             throw SyncError.apiError(400, "Invalid URL for batch get")
         }
-        let request = try buildRequest(url: url)
+        let request = try await buildRequest(url: url)
         return try await performRequest(request)
     }
 
@@ -120,7 +121,7 @@ class GoogleSheetsAPIClient: ObservableObject {
         guard let url = components.url else {
             throw SyncError.apiError(400, "Invalid URL for update")
         }
-        var request = try buildRequest(url: url)
+        var request = try await buildRequest(url: url)
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -136,7 +137,7 @@ class GoogleSheetsAPIClient: ObservableObject {
         guard let url = URL(string: "\(baseURL)/\(spreadsheetId)/values:batchUpdate") else {
             throw SyncError.apiError(400, "Invalid spreadsheet ID for batch update")
         }
-        var request = try buildRequest(url: url)
+        var request = try await buildRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -164,7 +165,7 @@ class GoogleSheetsAPIClient: ObservableObject {
         guard let url = components.url else {
             throw SyncError.apiError(400, "Invalid URL for append")
         }
-        var request = try buildRequest(url: url)
+        var request = try await buildRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -176,10 +177,9 @@ class GoogleSheetsAPIClient: ObservableObject {
 
     // MARK: - Private Methods
 
-    private func buildRequest(url: URL) throws -> URLRequest {
-        guard let token = accessToken else {
-            throw SyncError.notAuthenticated
-        }
+    private func buildRequest(url: URL) async throws -> URLRequest {
+        // Fetch a fresh/valid token before each request - this handles automatic refresh
+        let token = try await authService.getValidToken()
 
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

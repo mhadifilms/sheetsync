@@ -7,6 +7,7 @@ struct AddSyncView: View {
     @State private var selectedSheet: GoogleSpreadsheetListResponse.SpreadsheetFile?
     @State private var selectedTabs: Set<String> = []
     @State private var localPath: URL?
+    @State private var bookmarkData: Data?
     @State private var customFileName: String = ""
     @State private var fileFormat: FileFormat = .xlsx
     @State private var syncFrequency: TimeInterval = 30
@@ -384,8 +385,10 @@ struct AddSyncView: View {
         panel.canCreateDirectories = true
         panel.prompt = "Select"
 
-        if panel.runModal() == .OK {
-            localPath = panel.url
+        if panel.runModal() == .OK, let url = panel.url {
+            localPath = url
+            // Create security-scoped bookmark for persistent access
+            bookmarkData = SyncConfiguration.createBookmark(for: url)
         }
     }
 
@@ -400,6 +403,7 @@ struct AddSyncView: View {
             googleSheetName: sheet.name,
             selectedSheetTabs: Array(selectedTabs),
             localFilePath: path,
+            bookmarkData: bookmarkData,
             customFileName: fileName,
             syncFrequency: syncFrequency,
             fileFormat: fileFormat,

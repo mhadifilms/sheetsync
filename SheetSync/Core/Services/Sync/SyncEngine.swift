@@ -1,5 +1,7 @@
 import Foundation
 import Combine
+import AppKit
+import UniformTypeIdentifiers
 
 @MainActor
 class SyncEngine: ObservableObject {
@@ -167,8 +169,12 @@ class SyncEngine: ObservableObject {
         }
 
         // Check if local file is locked (if it exists)
-        if FileManager.default.fileExists(atPath: config.fullLocalPath.path) {
-            if !FileManager.default.isWritableFile(atPath: config.fullLocalPath.path) {
+        // Use security-scoped bookmark to check file access
+        let checkURL = config.resolveBookmark()
+        let checkPath = checkURL?.appendingPathComponent("\(config.effectiveFileName).\(config.fileFormat.fileExtension)") ?? config.fullLocalPath
+        if FileManager.default.fileExists(atPath: checkPath.path) {
+            if !FileManager.default.isWritableFile(atPath: checkPath.path) {
+                checkURL?.stopAccessingSecurityScopedResource()
                 task.state.status = .error
                 task.state.lastError = .fileLocked(config.fullLocalPath)
                 AppState.shared.updateSyncState(for: config.id, state: task.state)
@@ -176,6 +182,7 @@ class SyncEngine: ObservableObject {
                 return
             }
         }
+        checkURL?.stopAccessingSecurityScopedResource()
 
         do {
             // Step 1: Fetch current data from Google Sheets
@@ -187,8 +194,22 @@ class SyncEngine: ObservableObject {
             // Step 3: Handle FIRST SYNC specially - remote is authoritative
             if storedSnapshot == nil {
                 Logger.shared.info("First sync for \(config.googleSheetName) - using remote data as baseline")
-                // Write remote data to local file
-                try await writeLocalFile(config, data: remoteData, conflicts: [])
+
+                // Show save dialog on first sync if needed (handles existing file confirmation)
+                if config.needsInitialFileConfirmation {
+                    let confirmed = await showFirstSyncSaveDialog(config, data: remoteData)
+                    if !confirmed {
+                        task.state.status = .paused
+                        task.state.lastError = nil
+                        AppState.shared.updateSyncState(for: config.id, state: task.state)
+                        Logger.shared.info("First sync cancelled by user for \(config.googleSheetName)")
+                        return
+                    }
+                } else {
+                    // Write remote data to local file
+                    try await writeLocalFile(config, data: remoteData, conflicts: [])
+                }
+
                 // Save remote as the baseline snapshot
                 changeDetector.saveSnapshot(for: config.id, data: remoteData)
                 // Done - no changes to upload on first sync
@@ -377,8 +398,8 @@ class SyncEngine: ObservableObject {
         for sheet in spreadsheet.sheets {
             let tabTitle = sheet.properties.title
 
-            // Skip if specific tabs are selected and this isn't one of them
-            if !config.selectedSheetTabs.isEmpty && !config.selectedSheetTabs.contains(tabTitle) {
+            // Skip tabs only if syncNewTabs is disabled AND this tab wasn't originally selected
+            if !config.syncNewTabs && !config.selectedSheetTabs.isEmpty && !config.selectedSheetTabs.contains(tabTitle) {
                 continue
             }
 
@@ -409,26 +430,101 @@ class SyncEngine: ObservableObject {
     private func readLocalFile(_ config: SyncConfiguration) async throws -> SheetSnapshot {
         let fileManager = LocalFileManager.shared
 
+        // Resolve security-scoped bookmark for file access
+        let accessURL = config.resolveBookmark()
+        defer { accessURL?.stopAccessingSecurityScopedResource() }
+
+        let filePath = accessURL?.appendingPathComponent("\(config.effectiveFileName).\(config.fileFormat.fileExtension)") ?? config.fullLocalPath
+
         switch config.fileFormat {
         case .xlsx:
-            return try await fileManager.readXLSX(at: config.fullLocalPath, sheetId: config.googleSheetId)
+            return try await fileManager.readXLSX(at: filePath, sheetId: config.googleSheetId)
         case .csv:
-            return try await fileManager.readCSV(at: config.fullLocalPath, sheetId: config.googleSheetId)
+            return try await fileManager.readCSV(at: filePath, sheetId: config.googleSheetId)
         case .json:
-            return try await fileManager.readJSON(at: config.fullLocalPath, sheetId: config.googleSheetId)
+            return try await fileManager.readJSON(at: filePath, sheetId: config.googleSheetId)
         }
     }
 
     private func writeLocalFile(_ config: SyncConfiguration, data: SheetSnapshot, conflicts: [ConflictInfo]) async throws {
         let fileManager = LocalFileManager.shared
 
+        // Resolve security-scoped bookmark for file access
+        let accessURL = config.resolveBookmark()
+        defer { accessURL?.stopAccessingSecurityScopedResource() }
+
+        let filePath = accessURL?.appendingPathComponent("\(config.effectiveFileName).\(config.fileFormat.fileExtension)") ?? config.fullLocalPath
+
         switch config.fileFormat {
         case .xlsx:
-            try await fileManager.writeXLSX(data: data, to: config.fullLocalPath, conflicts: conflicts)
+            try await fileManager.writeXLSX(data: data, to: filePath, conflicts: conflicts)
         case .csv:
-            try await fileManager.writeCSV(data: data, to: config.fullLocalPath, conflicts: conflicts)
+            try await fileManager.writeCSV(data: data, to: filePath, conflicts: conflicts)
         case .json:
-            try await fileManager.writeJSON(data: data, to: config.fullLocalPath, conflicts: conflicts)
+            try await fileManager.writeJSON(data: data, to: filePath, conflicts: conflicts)
+        }
+    }
+
+    /// Shows a save dialog for first sync, allowing user to confirm filename and handle existing file replacement
+    @MainActor
+    private func showFirstSyncSaveDialog(_ config: SyncConfiguration, data: SheetSnapshot) async -> Bool {
+        let panel = NSSavePanel()
+        panel.title = "Save Synced File"
+        panel.message = "Choose where to save '\(config.googleSheetName)'"
+        panel.nameFieldStringValue = "\(config.effectiveFileName).\(config.fileFormat.fileExtension)"
+        panel.directoryURL = config.localFilePath
+        panel.canCreateDirectories = true
+
+        // Set allowed file types based on format
+        switch config.fileFormat {
+        case .xlsx:
+            panel.allowedContentTypes = [.init(filenameExtension: "xlsx")!]
+        case .csv:
+            panel.allowedContentTypes = [.plainText]
+        case .json:
+            panel.allowedContentTypes = [.json]
+        }
+
+        let response = panel.runModal()
+
+        guard response == .OK, let url = panel.url else {
+            return false
+        }
+
+        // Update config with new path if changed
+        let newDirectory = url.deletingLastPathComponent()
+        let newFileName = url.deletingPathExtension().lastPathComponent
+
+        // Check if path changed and update config
+        if newDirectory != config.localFilePath || newFileName != config.effectiveFileName {
+            var updatedConfig = config
+            updatedConfig.localFilePath = newDirectory
+            updatedConfig.customFileName = newFileName
+            updatedConfig.bookmarkData = SyncConfiguration.createBookmark(for: newDirectory)
+            updatedConfig.needsInitialFileConfirmation = false
+            AppState.shared.updateSyncConfiguration(updatedConfig)
+        } else {
+            // Just mark as confirmed
+            var updatedConfig = config
+            updatedConfig.needsInitialFileConfirmation = false
+            AppState.shared.updateSyncConfiguration(updatedConfig)
+        }
+
+        // Write the file to the selected location
+        do {
+            let fileManager = LocalFileManager.shared
+            switch config.fileFormat {
+            case .xlsx:
+                try await fileManager.writeXLSX(data: data, to: url, conflicts: [])
+            case .csv:
+                try await fileManager.writeCSV(data: data, to: url, conflicts: [])
+            case .json:
+                try await fileManager.writeJSON(data: data, to: url, conflicts: [])
+            }
+            return true
+        } catch {
+            Logger.shared.error("Failed to write file on first sync: \(error)")
+            return false
         }
     }
 
