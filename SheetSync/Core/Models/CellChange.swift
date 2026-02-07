@@ -138,12 +138,23 @@ struct CellSnapshot: Codable {
 struct SheetSnapshot: Codable {
     let googleSheetId: String
     let tabs: [String: CellSnapshot]
+    let tabOrder: [String]  // Preserves original tab order from Google Sheets
     let capturedAt: Date
 
-    init(googleSheetId: String, tabs: [String: CellSnapshot]) {
+    init(googleSheetId: String, tabs: [String: CellSnapshot], tabOrder: [String]? = nil) {
         self.googleSheetId = googleSheetId
         self.tabs = tabs
+        // Use provided order, or fall back to sorted keys for backwards compatibility
+        self.tabOrder = tabOrder ?? Array(tabs.keys).sorted()
         self.capturedAt = Date()
+    }
+
+    /// Returns tabs in their original order
+    var orderedTabs: [(name: String, data: CellSnapshot)] {
+        tabOrder.compactMap { name in
+            guard let data = tabs[name] else { return nil }
+            return (name: name, data: data)
+        }
     }
 }
 

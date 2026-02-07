@@ -111,12 +111,14 @@ struct MainPopoverView: View {
                         Label("Quit", systemImage: "power")
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 16, weight: .medium))
-                        .frame(width: 32, height: 32)
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
             }
         }
         .padding(.horizontal, 16)

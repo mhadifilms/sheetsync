@@ -29,6 +29,26 @@ class GoogleAuthService: NSObject, ObservableObject {
         super.init()
     }
 
+    /// Returns the active Google Client ID from settings or built-in Secrets
+    private var activeClientId: String? {
+        AppState.shared.settings.effectiveGoogleClientId
+    }
+
+    private var activeRedirectScheme: String? {
+        guard let clientId = activeClientId else { return nil }
+        return AppSettings.redirectScheme(for: clientId)
+    }
+
+    private var activeRedirectURI: String? {
+        guard let clientId = activeClientId else { return nil }
+        return AppSettings.redirectURI(for: clientId)
+    }
+
+    /// Check if OAuth is configured (either via settings or Secrets.swift)
+    var isOAuthConfigured: Bool {
+        activeClientId != nil
+    }
+
     func signIn() async throws -> AuthToken {
         isAuthenticating = true
         defer { isAuthenticating = false }
@@ -38,7 +58,7 @@ class GoogleAuthService: NSObject, ObservableObject {
         let codeChallenge = generateCodeChallenge(from: codeVerifier!)
 
         // Build authorization URL
-        let authURL = buildAuthorizationURL(codeChallenge: codeChallenge)
+        let authURL = try buildAuthorizationURL(codeChallenge: codeChallenge)
 
         // Start authentication session
         let code = try await startAuthSession(url: authURL)
@@ -91,10 +111,11 @@ class GoogleAuthService: NSObject, ObservableObject {
             .replacingOccurrences(of: "=", with: "")
     }
 
-    private func buildAuthorizationURL(codeChallenge: String) -> URL {
+    private func buildAuthorizationURL(codeChallenge: String) throws -> URL {
+        guard let clientId = activeClientId, let redirectUri = activeRedirectURI else {
+            throw AuthError.oauthNotConfigured
+        }
         var components = URLComponents(string: authorizationEndpoint)!
-        let clientId = Secrets.googleClientId
-        let redirectUri = Secrets.googleRedirectURI
         let scopeString = scopes.joined(separator: " ")
         components.queryItems = [
             URLQueryItem(name: "client_id", value: clientId),
@@ -110,7 +131,9 @@ class GoogleAuthService: NSObject, ObservableObject {
     }
 
     private func startAuthSession(url: URL) async throws -> String {
-        let callbackScheme = Secrets.googleRedirectScheme
+        guard let callbackScheme = activeRedirectScheme else {
+            throw AuthError.oauthNotConfigured
+        }
 
         // Store self reference for presentation context
         let presentationProvider = self
@@ -151,13 +174,14 @@ class GoogleAuthService: NSObject, ObservableObject {
         guard let verifier = codeVerifier else {
             throw AuthError.missingCodeVerifier
         }
+        guard let clientId = activeClientId, let redirectUri = activeRedirectURI else {
+            throw AuthError.oauthNotConfigured
+        }
 
         var request = URLRequest(url: URL(string: tokenEndpoint)!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        let clientId = Secrets.googleClientId
-        let redirectUri = Secrets.googleRedirectURI
         let params: [String: String] = [
             "client_id": clientId,
             "code": code,
@@ -199,12 +223,14 @@ class GoogleAuthService: NSObject, ObservableObject {
         guard let refreshToken = token.refreshToken else {
             throw AuthError.noRefreshToken
         }
+        guard let clientId = activeClientId else {
+            throw AuthError.oauthNotConfigured
+        }
 
         var request = URLRequest(url: URL(string: tokenEndpoint)!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        let clientId = Secrets.googleClientId
         let params: [String: String] = [
             "client_id": clientId,
             "refresh_token": refreshToken,
@@ -328,6 +354,7 @@ enum AuthError: Error, LocalizedError {
     case tokenExchangeFailed(Int, String)
     case tokenRefreshFailed
     case noRefreshToken
+    case oauthNotConfigured
 
     var errorDescription: String? {
         switch self {
@@ -347,6 +374,8 @@ enum AuthError: Error, LocalizedError {
             return "Failed to refresh authentication"
         case .noRefreshToken:
             return "No refresh token available"
+        case .oauthNotConfigured:
+            return "Google OAuth not configured. Add your Client ID in Settings."
         }
     }
 }

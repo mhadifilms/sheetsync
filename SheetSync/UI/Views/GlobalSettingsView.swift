@@ -1,6 +1,11 @@
 import SwiftUI
 import ServiceManagement
 
+enum AppInfo {
+    static let version = "1.0.0"
+    static let build = "1"
+}
+
 struct GlobalSettingsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) var dismiss
@@ -12,6 +17,7 @@ struct GlobalSettingsView: View {
     @State private var globalBackupCacheLimit: Int64
     @State private var autoBackupEnabled: Bool
     @State private var backupFrequencyHours: Int
+    @State private var customGoogleClientId: String
 
     init() {
         let settings = AppState.shared.settings
@@ -22,6 +28,7 @@ struct GlobalSettingsView: View {
         _globalBackupCacheLimit = State(initialValue: settings.globalBackupCacheLimit)
         _autoBackupEnabled = State(initialValue: settings.autoBackupEnabled)
         _backupFrequencyHours = State(initialValue: settings.backupFrequencyHours)
+        _customGoogleClientId = State(initialValue: settings.customGoogleClientId ?? "")
     }
 
     var body: some View {
@@ -48,6 +55,13 @@ struct GlobalSettingsView: View {
                         .onChange(of: launchAtLogin) { _, newValue in
                             updateLaunchAtLogin(newValue)
                         }
+                        .disabled(!canToggleLaunchAtLogin)
+
+                    if !canToggleLaunchAtLogin {
+                        Text("Move app to Applications folder to enable")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
 
                     Toggle("Show Notifications", isOn: $showNotifications)
                 }
@@ -103,13 +117,29 @@ struct GlobalSettingsView: View {
                     }
                 }
 
-                Section("About") {
-                    LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")
-                    LabeledContent("Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1")
+                Section {
+                    TextField("Google OAuth Client ID", text: $customGoogleClientId)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
 
-                    if let githubURL = URL(string: "https://github.com/yourusername/gsheet-sync") {
-                        Link("View on GitHub", destination: githubURL)
+                    if !customGoogleClientId.isEmpty && !customGoogleClientId.contains(".apps.googleusercontent.com") {
+                        Text("Client ID should end with .apps.googleusercontent.com")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
                     }
+                } header: {
+                    Text("Developer Settings")
+                } footer: {
+                    Text("Only needed if building from source. Get your Client ID from Google Cloud Console.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("About") {
+                    LabeledContent("Version", value: AppInfo.version)
+                    LabeledContent("Build", value: AppInfo.build)
+
+                    Link("View on GitHub", destination: URL(string: "https://github.com/mhadifilms/sheetsync")!)
                 }
             }
             .formStyle(.grouped)
@@ -132,12 +162,18 @@ struct GlobalSettingsView: View {
             }
             .padding()
         }
-        .frame(width: 450, height: 550)
+        .frame(width: 450, height: 650)
     }
 
     private var currentUsageText: String {
         // This would be fetched from BackupManager
         "Calculating..."
+    }
+
+    private var canToggleLaunchAtLogin: Bool {
+        // SMAppService requires the app to be in Applications folder (or signed for distribution)
+        let appPath = Bundle.main.bundlePath
+        return appPath.hasPrefix("/Applications") || appPath.contains(".app")
     }
 
     private func updateLaunchAtLogin(_ enabled: Bool) {
@@ -161,6 +197,7 @@ struct GlobalSettingsView: View {
         appState.settings.globalBackupCacheLimit = globalBackupCacheLimit
         appState.settings.autoBackupEnabled = autoBackupEnabled
         appState.settings.backupFrequencyHours = backupFrequencyHours
+        appState.settings.customGoogleClientId = customGoogleClientId.isEmpty ? nil : customGoogleClientId
 
         appState.saveSettings()
         dismiss()

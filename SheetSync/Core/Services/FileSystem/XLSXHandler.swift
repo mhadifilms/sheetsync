@@ -3,8 +3,14 @@ import Compression
 
 class XLSXWriter {
     private let fileManager = FileManager.default
+    private var sharedStringsMap: [String: Int] = [:]
+    private var sharedStringsList: [String] = []
 
     func write(snapshot: SheetSnapshot, conflicts: [ConflictInfo], to url: URL) throws {
+        // Reset shared strings for each write
+        sharedStringsMap = [:]
+        sharedStringsList = []
+
         // Create a temporary directory for the XLSX contents
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -13,20 +19,48 @@ class XLSXWriter {
             try? fileManager.removeItem(at: tempDir)
         }
 
-        // Create XLSX structure
+        // First pass: collect all unique strings for shared strings table
+        for (_, tab) in snapshot.tabs {
+            for row in tab.data {
+                for value in row {
+                    if !value.isEmpty && Double(value) == nil {
+                        // It's a text string, add to shared strings
+                        if sharedStringsMap[value] == nil {
+                            sharedStringsMap[value] = sharedStringsList.count
+                            sharedStringsList.append(value)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also add conflict strings
+        for conflict in conflicts {
+            let conflictRow = ConflictResolver().formatConflictRow(conflict: conflict)
+            for value in conflictRow {
+                if !value.isEmpty && Double(value) == nil {
+                    if sharedStringsMap[value] == nil {
+                        sharedStringsMap[value] = sharedStringsList.count
+                        sharedStringsList.append(value)
+                    }
+                }
+            }
+        }
+
+        // Create XLSX structure - use preserved tab order from Google Sheets
         try createContentTypes(at: tempDir)
         try createRels(at: tempDir)
-        try createWorkbook(at: tempDir, sheets: Array(snapshot.tabs.keys.sorted()))
+        try createWorkbook(at: tempDir, sheets: snapshot.tabOrder)
         try createWorkbookRels(at: tempDir, sheetCount: snapshot.tabs.count)
         try createStyles(at: tempDir)
 
-        // Create worksheets
-        for (index, (name, tab)) in snapshot.tabs.sorted(by: { $0.key < $1.key }).enumerated() {
+        // Create worksheets in original tab order
+        for (index, (name, tab)) in snapshot.orderedTabs.enumerated() {
             let sheetConflicts = conflicts.filter { $0.sheetTab == name }
             try createWorksheet(at: tempDir, index: index + 1, data: tab.data, conflicts: sheetConflicts)
         }
 
-        // Create shared strings (for text efficiency)
+        // Create shared strings table
         try createSharedStrings(at: tempDir, tabs: snapshot.tabs)
 
         // Ensure parent directory exists
@@ -163,18 +197,23 @@ class XLSXWriter {
         for (rowIndex, row) in allData.enumerated() {
             var cellElements = ""
             for (colIndex, value) in row.enumerated() {
+                guard !value.isEmpty else { continue }  // Skip empty cells
+
                 let cellRef = "\(columnLetter(colIndex))\(rowIndex + 1)"
-                let escapedValue = escapeXML(value)
 
                 // Check if value is a number
-                if let _ = Double(value), !value.isEmpty {
+                if let _ = Double(value) {
+                    // Numeric value - store directly
                     cellElements += """
-                        <c r="\(cellRef)"><v>\(escapedValue)</v></c>
+                        <c r="\(cellRef)"><v>\(escapeXML(value))</v></c>
                     """
                 } else {
-                    cellElements += """
-                        <c r="\(cellRef)" t="inlineStr"><is><t>\(escapedValue)</t></is></c>
-                    """
+                    // Text value - use shared string reference
+                    if let stringIndex = sharedStringsMap[value] {
+                        cellElements += """
+                            <c r="\(cellRef)" t="s"><v>\(stringIndex)</v></c>
+                        """
+                    }
                 }
             }
 
@@ -200,10 +239,15 @@ class XLSXWriter {
     private func createSharedStrings(at dir: URL, tabs: [String: CellSnapshot]) throws {
         let xlDir = dir.appendingPathComponent("xl")
 
+        var stringElements = ""
+        for str in sharedStringsList {
+            stringElements += "<si><t>\(escapeXML(str))</t></si>\n"
+        }
+
         let content = """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-        <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="0" uniqueCount="0">
-        </sst>
+        <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="\(sharedStringsList.count)" uniqueCount="\(sharedStringsList.count)">
+        \(stringElements)</sst>
         """
         try content.write(to: xlDir.appendingPathComponent("sharedStrings.xml"), atomically: true, encoding: .utf8)
     }

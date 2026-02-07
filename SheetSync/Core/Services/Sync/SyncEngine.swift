@@ -15,6 +15,7 @@ class SyncEngine: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var syncingConfigs: Set<UUID> = []  // Track configs currently syncing
     private var lastSyncTimes: [UUID: Date] = [:]  // Track when configs were last synced
+    private var lastRemoteModifiedTimes: [UUID: Date] = [:]  // Track remote sheet modification times
     private let minimumSyncInterval: TimeInterval = 3.0  // Minimum seconds between syncs
 
     private let sheetsClient = GoogleSheetsAPIClient.shared
@@ -168,28 +169,86 @@ class SyncEngine: ObservableObject {
             return
         }
 
-        // Check if local file is locked (if it exists)
-        // Use security-scoped bookmark to check file access
+        // Check if local file is locked (if it exists) - retry a few times
         let checkURL = config.resolveBookmark()
         let checkPath = checkURL?.appendingPathComponent("\(config.effectiveFileName).\(config.fileFormat.fileExtension)") ?? config.fullLocalPath
         if FileManager.default.fileExists(atPath: checkPath.path) {
-            if !FileManager.default.isWritableFile(atPath: checkPath.path) {
+            var fileLocked = true
+            for attempt in 1...3 {
+                if FileManager.default.isWritableFile(atPath: checkPath.path) {
+                    fileLocked = false
+                    break
+                }
+                if attempt < 3 {
+                    Logger.shared.debug("File locked, retry \(attempt)/3 in 2s: \(config.fullLocalPath.lastPathComponent)")
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                }
+            }
+            if fileLocked {
                 checkURL?.stopAccessingSecurityScopedResource()
                 task.state.status = .error
                 task.state.lastError = .fileLocked(config.fullLocalPath)
                 AppState.shared.updateSyncState(for: config.id, state: task.state)
-                Logger.shared.error("File locked: \(config.fullLocalPath.lastPathComponent)")
+                Logger.shared.error("File locked after retries: \(config.fullLocalPath.lastPathComponent)")
                 return
             }
         }
         checkURL?.stopAccessingSecurityScopedResource()
 
         do {
-            // Step 1: Fetch current data from Google Sheets
+            // Step 0: Check if remote has changed (saves API calls if unchanged)
+            let storedSnapshot = changeDetector.getSnapshot(for: config.id)
+            let lastKnownModTime = lastRemoteModifiedTimes[config.id]
+
+            if storedSnapshot != nil, let lastModTime = lastKnownModTime {
+                // We have a baseline - check if remote was modified
+                let currentModTime = try? await sheetsClient.getModifiedTime(id: config.googleSheetId)
+
+                if let currentModTime = currentModTime, currentModTime <= lastModTime {
+                    // Remote hasn't changed - only check local file
+                    let localData = try? await readLocalFile(config)
+
+                    if let localData = localData {
+                        let localChanges = changeDetector.detectChanges(
+                            current: localData,
+                            baseline: storedSnapshot,
+                            source: .local
+                        ).filter { $0.changeType != .deleted }
+
+                        if localChanges.isEmpty {
+                            // No changes anywhere - quick exit
+                            Logger.shared.debug("No changes for \(config.googleSheetName) - skipping full fetch")
+                            task.state.status = .idle
+                            task.state.lastSyncTime = Date()
+                            task.state.nextSyncTime = Date().addingTimeInterval(config.syncFrequency)
+                            AppState.shared.updateSyncState(for: config.id, state: task.state)
+                            lastSyncTimes[config.id] = Date()
+                            return
+                        } else {
+                            // Local changes detected - need to upload
+                            Logger.shared.debug("Local changes detected, uploading \(localChanges.count) changes")
+                            try await uploadChanges(config, changes: localChanges)
+                            changeDetector.saveSnapshot(for: config.id, data: localData)
+
+                            task.state.status = .idle
+                            task.state.lastSyncTime = Date()
+                            task.state.nextSyncTime = Date().addingTimeInterval(config.syncFrequency)
+                            task.state.lastChangeDirection = .upload
+                            AppState.shared.updateSyncState(for: config.id, state: task.state)
+                            lastSyncTimes[config.id] = Date()
+                            Logger.shared.info("Sync completed for \(config.googleSheetName)")
+                            return
+                        }
+                    }
+                }
+            }
+
+            // Step 1: Fetch current data from Google Sheets (full fetch needed)
+            Logger.shared.debug("Full fetch for \(config.googleSheetName)")
             let remoteData = try await fetchRemoteData(config)
 
-            // Step 2: Get stored snapshot for comparison
-            let storedSnapshot = changeDetector.getSnapshot(for: config.id)
+            // Update last known modification time (use current time as approximation to avoid extra API call)
+            lastRemoteModifiedTimes[config.id] = Date()
 
             // Step 3: Handle FIRST SYNC specially - remote is authoritative
             if storedSnapshot == nil {
@@ -360,7 +419,15 @@ class SyncEngine: ObservableObject {
             AppState.shared.updateSyncState(for: config.id, state: task.state)
             Logger.shared.error("Sync failed for \(config.googleSheetName): \(error)")
 
-            if AppState.shared.settings.showNotifications {
+            // Auto-retry for transient errors after delay
+            if error.isTransient {
+                let retryDelay: TimeInterval = error.isRateLimitError ? 60 : 10
+                Logger.shared.info("Will retry \(config.googleSheetName) in \(Int(retryDelay))s")
+                Task {
+                    try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
+                    await self.performSync(task)
+                }
+            } else if AppState.shared.settings.showNotifications {
                 NotificationManager.shared.showNotification(
                     title: "Sync Error",
                     body: error.localizedDescription
@@ -371,6 +438,15 @@ class SyncEngine: ObservableObject {
             task.state.lastError = .unknown(error)
             AppState.shared.updateSyncState(for: config.id, state: task.state)
             Logger.shared.error("Sync failed for \(config.googleSheetName): \(error)")
+
+            // Auto-retry for network errors
+            if (error as NSError).domain == NSURLErrorDomain {
+                Logger.shared.info("Network error, will retry \(config.googleSheetName) in 10s")
+                Task {
+                    try? await Task.sleep(nanoseconds: 10_000_000_000)
+                    await self.performSync(task)
+                }
+            }
         }
     }
 
@@ -392,6 +468,7 @@ class SyncEngine: ObservableObject {
         }
 
         var tabs: [String: CellSnapshot] = [:]
+        var tabOrder: [String] = []  // Preserve original tab order from Google Sheets
         var totalRows = 0
         var totalCols = 0
 
@@ -417,6 +494,7 @@ class SyncEngine: ObservableObject {
             } ?? []
 
             tabs[tabTitle] = CellSnapshot(sheetTab: tabTitle, data: data)
+            tabOrder.append(tabTitle)  // Preserve order as we iterate
         }
 
         // Warn about very large sheets (but don't fail)
@@ -424,7 +502,7 @@ class SyncEngine: ObservableObject {
             Logger.shared.warning("Large sheet detected: \(config.googleSheetName) (\(totalRows) rows, \(totalCols) cols) - sync may be slow")
         }
 
-        return SheetSnapshot(googleSheetId: config.googleSheetId, tabs: tabs)
+        return SheetSnapshot(googleSheetId: config.googleSheetId, tabs: tabs, tabOrder: tabOrder)
     }
 
     private func readLocalFile(_ config: SyncConfiguration) async throws -> SheetSnapshot {
@@ -543,9 +621,8 @@ class SyncEngine: ObservableObject {
             changesByTab[change.sheetTab, default: []].append(change)
         }
 
-        // Separate updates (existing rows) from appends (new rows)
+        // Build value ranges for batch update
         var valueRanges: [GoogleBatchUpdateRequest.ValueRange] = []
-        var appendsByTab: [String: [[String]]] = [:]
 
         for (tab, tabChanges) in changesByTab {
             let maxRow = sheetRowCounts[tab] ?? 1000
@@ -555,7 +632,9 @@ class SyncEngine: ObservableObject {
 
                 if rowNumber <= maxRow {
                     // Row exists - update it
-                    let range = "\(tab)!\(CellChange.columnToLetter(change.column))\(rowNumber)"
+                    // Quote tab name to handle spaces and special characters
+                    let quotedTab = "'\(tab.replacingOccurrences(of: "'", with: "''"))'"
+                    let range = "\(quotedTab)!\(CellChange.columnToLetter(change.column))\(rowNumber)"
                     valueRanges.append(GoogleBatchUpdateRequest.ValueRange(
                         range: range,
                         values: [[change.newValue ?? ""]]
@@ -569,10 +648,12 @@ class SyncEngine: ObservableObject {
         }
 
         if !valueRanges.isEmpty {
-            _ = try await sheetsClient.batchUpdateValues(
+            Logger.shared.debug("Uploading \(valueRanges.count) cell changes")
+            let response = try await sheetsClient.batchUpdateValues(
                 spreadsheetId: config.googleSheetId,
                 data: valueRanges
             )
+            Logger.shared.info("Uploaded \(response.totalUpdatedCells ?? 0) cells to Google Sheets")
         }
     }
 }
@@ -589,13 +670,3 @@ class SyncTask {
     }
 }
 
-// MARK: - SyncError Extension
-
-extension SyncError {
-    var isRateLimitError: Bool {
-        if case .rateLimited = self {
-            return true
-        }
-        return false
-    }
-}

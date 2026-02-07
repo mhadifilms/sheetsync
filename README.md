@@ -29,16 +29,30 @@ cd sheetsync
 
 ### 2. Create Google OAuth Credentials
 
-See [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md) for detailed instructions with screenshots.
+You need a Google OAuth Client ID to use this app. See [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md) for detailed instructions with screenshots.
 
 **Quick version:**
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project
-3. Enable Google Sheets API and Google Drive API
-4. Create OAuth 2.0 Desktop credentials
-5. Copy the Client ID
+2. Create a new project (or select existing)
+3. Enable **Google Sheets API** and **Google Drive API**
+4. Go to **APIs & Services > Credentials**
+5. Click **Create Credentials > OAuth client ID**
+6. Select **iOS** as application type
+7. Set Bundle ID to: `com.sheetsync.app`
+8. Copy the Client ID (looks like: `123456789-xxxx.apps.googleusercontent.com`)
 
-### 3. Configure Secrets
+### 3. Configure OAuth (Choose One Method)
+
+#### Option A: Via App Settings (Recommended for users)
+
+1. Build and run the app (see step 4)
+2. Open **Settings** from the menu bar
+3. Scroll to **Developer Settings**
+4. Paste your Google OAuth Client ID
+5. Click **Save**
+6. Sign in with Google
+
+#### Option B: Via Secrets.swift (For developers)
 
 ```bash
 cp SheetSync/Config/Secrets.example.txt SheetSync/Config/Secrets.swift
@@ -49,9 +63,11 @@ Edit `SheetSync/Config/Secrets.swift` and replace `YOUR_CLIENT_ID` with your act
 ```swift
 enum Secrets {
     static let googleClientId = "123456789-xxxx.apps.googleusercontent.com"
-    static let googleRedirectScheme = "com.sheetsync.app"
+    // Redirect scheme is auto-derived from client ID
 }
 ```
+
+> **Note:** `Secrets.swift` is gitignored and won't be committed. Option A (Settings) is easier for most users.
 
 ### 4. Build and Run
 
@@ -143,6 +159,12 @@ The app respects Google's API quotas:
 If rate limited, the app waits automatically and retries.
 
 ## Troubleshooting
+
+### "Google OAuth not configured" error
+- Open **Settings** from the menu bar
+- Scroll to **Developer Settings**
+- Enter your Google OAuth Client ID
+- Click **Save** and try signing in again
 
 ### "Not signed in" error
 - Sign out and sign in again

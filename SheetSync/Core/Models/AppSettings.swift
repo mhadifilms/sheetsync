@@ -8,6 +8,7 @@ struct AppSettings: Codable {
     var defaultFileFormat: FileFormat
     var autoBackupEnabled: Bool
     var backupFrequencyHours: Int
+    var customGoogleClientId: String?  // For users building from source
 
     init(
         launchAtLogin: Bool = false,
@@ -16,7 +17,8 @@ struct AppSettings: Codable {
         defaultSyncFrequency: TimeInterval = 30,
         defaultFileFormat: FileFormat = .xlsx,
         autoBackupEnabled: Bool = true,
-        backupFrequencyHours: Int = 5
+        backupFrequencyHours: Int = 5,
+        customGoogleClientId: String? = nil
     ) {
         self.launchAtLogin = launchAtLogin
         self.globalBackupCacheLimit = globalBackupCacheLimit
@@ -25,6 +27,28 @@ struct AppSettings: Codable {
         self.defaultFileFormat = defaultFileFormat
         self.autoBackupEnabled = autoBackupEnabled
         self.backupFrequencyHours = backupFrequencyHours
+        self.customGoogleClientId = customGoogleClientId
+    }
+
+    /// Returns the active Google Client ID (custom or built-in)
+    var effectiveGoogleClientId: String? {
+        if let custom = customGoogleClientId, !custom.isEmpty {
+            return custom
+        }
+        // Fall back to compiled-in Secrets if available
+        let builtIn = Secrets.googleClientId
+        return builtIn != "YOUR_CLIENT_ID.apps.googleusercontent.com" ? builtIn : nil
+    }
+
+    /// Derives redirect scheme from client ID
+    static func redirectScheme(for clientId: String) -> String {
+        let prefix = clientId.replacingOccurrences(of: ".apps.googleusercontent.com", with: "")
+        return "com.googleusercontent.apps.\(prefix)"
+    }
+
+    /// Derives redirect URI from client ID
+    static func redirectURI(for clientId: String) -> String {
+        "\(redirectScheme(for: clientId)):/oauth2callback"
     }
 
     var cacheLimitFormatted: String {

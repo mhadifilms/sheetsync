@@ -50,6 +50,26 @@ struct SyncConfiguration: Codable, Identifiable, Hashable {
         self.lastModified = Date()
     }
 
+    // Custom decoder to handle missing fields from old configs
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        googleSheetId = try container.decode(String.self, forKey: .googleSheetId)
+        googleSheetName = try container.decode(String.self, forKey: .googleSheetName)
+        selectedSheetTabs = try container.decode([String].self, forKey: .selectedSheetTabs)
+        syncNewTabs = try container.decodeIfPresent(Bool.self, forKey: .syncNewTabs) ?? true
+        localFilePath = try container.decode(URL.self, forKey: .localFilePath)
+        bookmarkData = try container.decodeIfPresent(Data.self, forKey: .bookmarkData)
+        customFileName = try container.decodeIfPresent(String.self, forKey: .customFileName)
+        syncFrequency = try container.decode(TimeInterval.self, forKey: .syncFrequency)
+        fileFormat = try container.decode(FileFormat.self, forKey: .fileFormat)
+        isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+        needsInitialFileConfirmation = try container.decodeIfPresent(Bool.self, forKey: .needsInitialFileConfirmation) ?? false
+        backupSettings = try container.decode(BackupSettings.self, forKey: .backupSettings)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        lastModified = try container.decode(Date.self, forKey: .lastModified)
+    }
+
     var effectiveFileName: String {
         if let custom = customFileName, !custom.isEmpty {
             return custom
@@ -65,6 +85,7 @@ struct SyncConfiguration: Codable, Identifiable, Hashable {
     /// Call `stopAccessingSecurityScopedResource()` on the returned URL when done.
     func resolveBookmark() -> URL? {
         guard let bookmarkData = bookmarkData else {
+            // No bookmark stored - use localFilePath directly (works for non-sandboxed paths)
             return localFilePath
         }
 
@@ -77,14 +98,21 @@ struct SyncConfiguration: Codable, Identifiable, Hashable {
                 bookmarkDataIsStale: &isStale
             )
 
+            if isStale {
+                Logger.shared.debug("Bookmark is stale for \(url.lastPathComponent), will use direct path")
+            }
+
             if url.startAccessingSecurityScopedResource() {
                 return url
             }
         } catch {
-            Logger.shared.error("Failed to resolve bookmark: \(error)")
+            // Bookmark resolution failed - fall back to direct path access
+            // This is common after app updates or when files are on non-sandboxed volumes
+            Logger.shared.debug("Bookmark unavailable, using direct path for \(localFilePath.lastPathComponent)")
         }
 
-        return nil
+        // Fall back to localFilePath - works for files on accessible volumes
+        return localFilePath
     }
 
     /// Creates a security-scoped bookmark for the given URL

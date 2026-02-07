@@ -30,6 +30,9 @@ class ConflictResolver {
             remoteChangeMap[key] = change
         }
 
+        // Track if local has deletions that need to be restored from remote
+        var localDeletionCount = 0
+
         // Process local changes
         // SAFETY: Never upload deletions from local to remote - this prevents
         // accidental data loss when local file is empty/corrupted/unreadable.
@@ -37,7 +40,7 @@ class ConflictResolver {
         for localChange in localChanges {
             // Skip deletions - only upload additions and modifications
             if localChange.changeType == .deleted {
-                Logger.shared.debug("Skipping local deletion at \(localChange.cellReference) - deletions must be done in Google Sheets")
+                localDeletionCount += 1
                 continue
             }
 
@@ -94,8 +97,14 @@ class ConflictResolver {
         }
 
         // Determine if local file needs updating
-        // Local needs update only if there are remote changes (since remote data differs from baseline)
-        let hasLocalUpdates = !remoteChanges.isEmpty
+        // Local needs update if:
+        // 1. There are remote changes (remote data differs from baseline), OR
+        // 2. Local has deletions that need to be restored from remote
+        let hasLocalUpdates = !remoteChanges.isEmpty || localDeletionCount > 0
+
+        if localDeletionCount > 0 {
+            Logger.shared.info("Local file has \(localDeletionCount) missing cells - will restore from Google")
+        }
 
         return ConflictResolution(
             changesToUpload: changesToUpload,

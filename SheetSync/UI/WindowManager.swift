@@ -11,8 +11,9 @@ class WindowManager {
     func openWindow<Content: View>(id: String, title: String, content: Content, size: NSSize) {
         // If window already exists, bring it to front
         if let existingWindow = windows[id], existingWindow.isVisible {
-            existingWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            existingWindow.makeKeyAndOrderFront(nil)
+            existingWindow.orderFrontRegardless()
             return
         }
 
@@ -38,8 +39,10 @@ class WindowManager {
 
         windows[id] = window
 
-        window.makeKeyAndOrderFront(nil)
+        // For menu bar apps (LSUIElement), we need to activate first then show window
         NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()  // Force window to front even if app isn't active
     }
 
     func closeWindow(id: String) {

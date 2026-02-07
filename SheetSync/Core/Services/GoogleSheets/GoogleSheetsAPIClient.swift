@@ -47,6 +47,27 @@ class GoogleSheetsAPIClient: ObservableObject {
         return try await performRequest(request)
     }
 
+    // MARK: - Check Modified Time (lightweight - 1 API call)
+
+    func getModifiedTime(id: String) async throws -> Date? {
+        try await rateLimiter.waitForReadSlot()
+
+        guard var components = URLComponents(string: "\(driveBaseURL)/\(id)") else {
+            throw SyncError.apiError(400, "Invalid file ID")
+        }
+        components.queryItems = [
+            URLQueryItem(name: "fields", value: "modifiedTime"),
+            URLQueryItem(name: "supportsAllDrives", value: "true")
+        ]
+
+        guard let url = components.url else {
+            throw SyncError.apiError(400, "Invalid URL for modified time check")
+        }
+        let request = try await buildRequest(url: url)
+        let response: DriveFileResponse = try await performRequest(request)
+        return response.modifiedTime
+    }
+
     // MARK: - Get Spreadsheet Metadata
 
     func getSpreadsheet(id: String) async throws -> GoogleSpreadsheetResponse {
@@ -243,4 +264,23 @@ struct AppendValuesResponse: Codable {
 struct ValueRangeRequest: Codable {
     let range: String
     let values: [[String]]
+}
+
+struct DriveFileResponse: Codable {
+    let modifiedTime: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case modifiedTime
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let timeString = try container.decodeIfPresent(String.self, forKey: .modifiedTime) {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            modifiedTime = formatter.date(from: timeString)
+        } else {
+            modifiedTime = nil
+        }
+    }
 }

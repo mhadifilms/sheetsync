@@ -134,6 +134,20 @@ enum SyncError: Error, LocalizedError {
             return false
         }
     }
+
+    var isTransient: Bool {
+        switch self {
+        case .networkError, .networkTimeout, .rateLimited, .fileLocked:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var isRateLimitError: Bool {
+        if case .rateLimited = self { return true }
+        return false
+    }
 }
 
 extension Date {

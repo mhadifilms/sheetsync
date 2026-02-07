@@ -128,11 +128,30 @@ class AppState: ObservableObject {
     }
 
     private func loadSyncConfigurations() {
-        if let data = UserDefaults.standard.data(forKey: "syncConfigurations"),
-           let configs = try? JSONDecoder().decode([SyncConfiguration].self, from: data) {
-            self.syncConfigurations = configs
-            for config in configs {
-                syncStates[config.id] = SyncState()
+        // Try to load configs, with fallback to backup if corrupted
+        if let data = UserDefaults.standard.data(forKey: "syncConfigurations") {
+            do {
+                let configs = try JSONDecoder().decode([SyncConfiguration].self, from: data)
+                self.syncConfigurations = configs
+                for config in configs {
+                    syncStates[config.id] = SyncState()
+                }
+                // Save backup on successful load
+                UserDefaults.standard.set(data, forKey: "syncConfigurations.backup")
+            } catch {
+                Logger.shared.error("Failed to decode configs, trying backup: \(error)")
+                // Try backup
+                if let backupData = UserDefaults.standard.data(forKey: "syncConfigurations.backup"),
+                   let configs = try? JSONDecoder().decode([SyncConfiguration].self, from: backupData) {
+                    self.syncConfigurations = configs
+                    for config in configs {
+                        syncStates[config.id] = SyncState()
+                    }
+                    Logger.shared.info("Restored \(configs.count) configs from backup")
+                } else {
+                    Logger.shared.error("Backup also failed, starting fresh")
+                    self.syncConfigurations = []
+                }
             }
         }
     }
