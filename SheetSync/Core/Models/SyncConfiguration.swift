@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 struct SyncConfiguration: Codable, Identifiable, Hashable {
     let id: UUID
@@ -123,6 +124,14 @@ enum FileFormat: String, Codable, CaseIterable {
         case .xlsx: return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         case .csv: return "text/csv"
         case .json: return "application/json"
+        }
+    }
+
+    var contentType: UTType? {
+        switch self {
+        case .xlsx: return UTType(filenameExtension: "xlsx")
+        case .csv: return .commaSeparatedText
+        case .json: return .json
         }
     }
 }

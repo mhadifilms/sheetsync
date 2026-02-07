@@ -223,41 +223,7 @@ struct AddSyncView: View {
             Text("Configure sync")
                 .font(.headline)
 
-            // Local path
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Save location")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-
-                HStack {
-                    Text(localPath?.path ?? "Choose a folder...")
-                        .font(.subheadline)
-                        .foregroundStyle(localPath == nil ? .secondary : .primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    Spacer()
-
-                    Button("Browse") {
-                        selectFolder()
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(12)
-                .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-            }
-
-            // File name
-            VStack(alignment: .leading, spacing: 8) {
-                Text("File name (optional)")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-
-                TextField("Leave empty to use sheet name", text: $customFileName)
-                    .textFieldStyle(.roundedBorder)
-            }
-
-            // File format
+            // File format (select first so save dialog has correct extension)
             VStack(alignment: .leading, spacing: 8) {
                 Text("File format")
                     .font(.subheadline)
@@ -271,6 +237,36 @@ struct AddSyncView: View {
                 .pickerStyle(.segmented)
             }
 
+            // Save location (uses NSSavePanel)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Save as")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                HStack {
+                    if let path = localPath {
+                        Text("\(path.path)/\(customFileName.isEmpty ? (selectedSheet?.name ?? "file") : customFileName).\(fileFormat.fileExtension)")
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    } else {
+                        Text("Choose save location...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button("Choose...") {
+                        selectSaveLocation()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(12)
+                .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            }
+
             // Sync frequency
             VStack(alignment: .leading, spacing: 8) {
                 Text("Sync frequency")
@@ -278,13 +274,13 @@ struct AddSyncView: View {
                     .fontWeight(.medium)
 
                 Picker("Frequency", selection: $syncFrequency) {
-                    Text("15 seconds").tag(TimeInterval(15))
-                    Text("30 seconds").tag(TimeInterval(30))
-                    Text("1 minute").tag(TimeInterval(60))
-                    Text("5 minutes").tag(TimeInterval(300))
-                    Text("15 minutes").tag(TimeInterval(900))
+                    Text("15s").tag(TimeInterval(15))
+                    Text("30s").tag(TimeInterval(30))
+                    Text("1m").tag(TimeInterval(60))
+                    Text("5m").tag(TimeInterval(300))
+                    Text("15m").tag(TimeInterval(900))
                 }
-                .pickerStyle(.menu)
+                .pickerStyle(.segmented)
             }
         }
     }
@@ -377,18 +373,29 @@ struct AddSyncView: View {
         }
     }
 
-    private func selectFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
+    private func selectSaveLocation() {
+        guard let sheet = selectedSheet else { return }
+
+        // Ensure app is active for menu bar apps
+        NSApp.activate(ignoringOtherApps: true)
+
+        let panel = NSSavePanel()
+        panel.title = "Save Synced File"
+        panel.message = "Choose where to save '\(sheet.name)'"
+        panel.nameFieldStringValue = "\(customFileName.isEmpty ? sheet.name : customFileName).\(fileFormat.fileExtension)"
         panel.canCreateDirectories = true
-        panel.prompt = "Select"
+        panel.isExtensionHidden = false
+
+        // Set allowed file types based on format
+        if let contentType = fileFormat.contentType {
+            panel.allowedContentTypes = [contentType]
+        }
 
         if panel.runModal() == .OK, let url = panel.url {
-            localPath = url
-            // Create security-scoped bookmark for persistent access
-            bookmarkData = SyncConfiguration.createBookmark(for: url)
+            localPath = url.deletingLastPathComponent()
+            customFileName = url.deletingPathExtension().lastPathComponent
+            // Create security-scoped bookmark for persistent access to the directory
+            bookmarkData = SyncConfiguration.createBookmark(for: localPath!)
         }
     }
 
@@ -402,12 +409,14 @@ struct AddSyncView: View {
             googleSheetId: sheet.id,
             googleSheetName: sheet.name,
             selectedSheetTabs: Array(selectedTabs),
+            syncNewTabs: true,
             localFilePath: path,
             bookmarkData: bookmarkData,
             customFileName: fileName,
             syncFrequency: syncFrequency,
             fileFormat: fileFormat,
             isEnabled: true,
+            needsInitialFileConfirmation: false,  // Already confirmed via NSSavePanel
             backupSettings: BackupSettings()
         )
 
