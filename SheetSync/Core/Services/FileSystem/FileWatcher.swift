@@ -4,6 +4,7 @@ import CoreServices
 class FileWatcher {
     private var streams: [UUID: FSEventStreamRef] = [:]
     private var paths: [UUID: URL] = [:]
+    private var retainedRefs: [UUID: Unmanaged<FileWatcher>] = [:]
     private var callback: (UUID) -> Void
 
     init(callback: @escaping (UUID) -> Void) {
@@ -23,9 +24,13 @@ class FileWatcher {
         let pathString = path.deletingLastPathComponent().path as CFString
         let pathsToWatch = [pathString] as CFArray
 
+        // Retain self for the duration of this stream's lifetime
+        let retained = Unmanaged.passRetained(self)
+        retainedRefs[id] = retained
+
         var context = FSEventStreamContext(
             version: 0,
-            info: Unmanaged.passUnretained(self).toOpaque(),
+            info: retained.toOpaque(),
             retain: nil,
             release: nil,
             copyDescription: nil
@@ -45,10 +50,12 @@ class FileWatcher {
             FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
         ) else {
             Logger.shared.error("Failed to create FSEventStream for \(path)")
+            retained.release()
+            retainedRefs.removeValue(forKey: id)
             return
         }
 
-        FSEventStreamScheduleWithRunLoop(stream, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
         FSEventStreamStart(stream)
 
         streams[id] = stream
@@ -61,6 +68,10 @@ class FileWatcher {
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
+
+        // Release the retained reference for this stream
+        retainedRefs[id]?.release()
+        retainedRefs.removeValue(forKey: id)
 
         streams.removeValue(forKey: id)
         paths.removeValue(forKey: id)

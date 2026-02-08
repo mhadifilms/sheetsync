@@ -20,11 +20,11 @@ class XLSXWriter {
         }
 
         // First pass: collect all unique strings for shared strings table
+        // All values are treated as strings to preserve formatting (zip codes, dates, etc.)
         for (_, tab) in snapshot.tabs {
             for row in tab.data {
                 for value in row {
-                    if !value.isEmpty && Double(value) == nil {
-                        // It's a text string, add to shared strings
+                    if !value.isEmpty {
                         if sharedStringsMap[value] == nil {
                             sharedStringsMap[value] = sharedStringsList.count
                             sharedStringsList.append(value)
@@ -48,7 +48,7 @@ class XLSXWriter {
         }
 
         // Create XLSX structure - use preserved tab order from Google Sheets
-        try createContentTypes(at: tempDir)
+        try createContentTypes(at: tempDir, sheetCount: snapshot.tabs.count)
         try createRels(at: tempDir)
         try createWorkbook(at: tempDir, sheets: snapshot.tabOrder)
         try createWorkbookRels(at: tempDir, sheetCount: snapshot.tabs.count)
@@ -70,14 +70,22 @@ class XLSXWriter {
         try zipDirectory(tempDir, to: url)
     }
 
-    private func createContentTypes(at dir: URL) throws {
+    private func createContentTypes(at dir: URL, sheetCount: Int) throws {
+        var worksheetOverrides = ""
+        for i in 1...sheetCount {
+            worksheetOverrides += """
+                <Override PartName="/xl/worksheets/sheet\(i).xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+
+            """
+        }
+
         let content = """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
             <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
             <Default Extension="xml" ContentType="application/xml"/>
             <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-            <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+            \(worksheetOverrides)<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
             <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
         </Types>
         """
@@ -201,19 +209,12 @@ class XLSXWriter {
 
                 let cellRef = "\(columnLetter(colIndex))\(rowIndex + 1)"
 
-                // Check if value is a number
-                if let _ = Double(value) {
-                    // Numeric value - store directly
+                // Always use shared string references to preserve formatting
+                // (prevents zip codes like "07030" from becoming 7030, etc.)
+                if let stringIndex = sharedStringsMap[value] {
                     cellElements += """
-                        <c r="\(cellRef)"><v>\(escapeXML(value))</v></c>
+                        <c r="\(cellRef)" t="s"><v>\(stringIndex)</v></c>
                     """
-                } else {
-                    // Text value - use shared string reference
-                    if let stringIndex = sharedStringsMap[value] {
-                        cellElements += """
-                            <c r="\(cellRef)" t="s"><v>\(stringIndex)</v></c>
-                        """
-                    }
                 }
             }
 

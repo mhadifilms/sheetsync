@@ -19,12 +19,14 @@ actor LocalFileManager {
             }
 
             var tabs: [String: CellSnapshot] = [:]
+            var tabOrder: [String] = []
 
             let sharedStrings = try? file.parseSharedStrings()
 
             for wbPath in try file.parseWorkbooks() {
                 for (optionalSheetName, sheetPath) in try file.parseWorksheetPathsAndNames(workbook: wbPath) {
                     guard let sheetName = optionalSheetName else { continue }
+                    tabOrder.append(sheetName)
 
                     let worksheet = try file.parseWorksheet(at: sheetPath)
 
@@ -58,7 +60,7 @@ actor LocalFileManager {
                 }
             }
 
-            return SheetSnapshot(googleSheetId: sheetId, tabs: tabs)
+            return SheetSnapshot(googleSheetId: sheetId, tabs: tabs, tabOrder: tabOrder)
 
         } catch let error as SyncError {
             throw error
@@ -90,7 +92,7 @@ actor LocalFileManager {
 
     // MARK: - CSV
 
-    func readCSV(at url: URL, sheetId: String) async throws -> SheetSnapshot {
+    func readCSV(at url: URL, sheetId: String, tabName: String? = nil) async throws -> SheetSnapshot {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw SyncError.fileNotFound(url)
         }
@@ -98,10 +100,12 @@ actor LocalFileManager {
         do {
             let content = try String(contentsOf: url, encoding: .utf8)
             let rows = parseCSV(content)
-            let fileName = url.deletingPathExtension().lastPathComponent
+            // Use the provided tab name (from baseline/config) to match Google Sheet tab name,
+            // falling back to filename only if no tab name is known
+            let effectiveTabName = tabName ?? url.deletingPathExtension().lastPathComponent
 
-            let tabSnapshot = CellSnapshot(sheetTab: fileName, data: rows)
-            return SheetSnapshot(googleSheetId: sheetId, tabs: [fileName: tabSnapshot])
+            let tabSnapshot = CellSnapshot(sheetTab: effectiveTabName, data: rows)
+            return SheetSnapshot(googleSheetId: sheetId, tabs: [effectiveTabName: tabSnapshot])
 
         } catch let error as SyncError {
             throw error
@@ -118,8 +122,8 @@ actor LocalFileManager {
             }
         }
 
-        // For CSV, we only write the first tab
-        guard let firstTab = data.tabs.values.first else {
+        // For CSV, we only write the first tab (using preserved order)
+        guard let firstTab = data.orderedTabs.first?.data ?? data.tabs.values.first else {
             throw SyncError.parseError("No data to write")
         }
 
@@ -170,11 +174,13 @@ actor LocalFileManager {
             let jsonFile = try JSONDecoder().decode(JSONSheetFile.self, from: jsonData)
 
             var tabs: [String: CellSnapshot] = [:]
+            var tabOrder: [String] = []
             for tab in jsonFile.sheets {
                 tabs[tab.name] = CellSnapshot(sheetTab: tab.name, data: tab.data)
+                tabOrder.append(tab.name)
             }
 
-            return SheetSnapshot(googleSheetId: sheetId, tabs: tabs)
+            return SheetSnapshot(googleSheetId: sheetId, tabs: tabs, tabOrder: tabOrder)
 
         } catch let error as SyncError {
             throw error
@@ -193,7 +199,7 @@ actor LocalFileManager {
 
         var sheets: [JSONSheetTab] = []
 
-        for (name, tab) in data.tabs.sorted(by: { $0.key < $1.key }) {
+        for (name, tab) in data.orderedTabs {
             sheets.append(JSONSheetTab(name: name, data: tab.data))
         }
 
@@ -232,23 +238,52 @@ actor LocalFileManager {
         var currentRow: [String] = []
         var currentCell = ""
         var insideQuotes = false
+        let chars = Array(content)
+        var i = 0
 
-        for char in content {
-            if char == "\"" {
-                insideQuotes.toggle()
-            } else if char == "," && !insideQuotes {
-                currentRow.append(currentCell)
-                currentCell = ""
-            } else if (char == "\n" || char == "\r") && !insideQuotes {
-                if !currentCell.isEmpty || !currentRow.isEmpty {
+        while i < chars.count {
+            let char = chars[i]
+
+            if insideQuotes {
+                if char == "\"" {
+                    // Check for escaped quote ("" -> ")
+                    if i + 1 < chars.count && chars[i + 1] == "\"" {
+                        currentCell.append("\"")
+                        i += 2
+                        continue
+                    } else {
+                        // End of quoted field
+                        insideQuotes = false
+                    }
+                } else {
+                    currentCell.append(char)
+                }
+            } else {
+                if char == "\"" {
+                    insideQuotes = true
+                } else if char == "," {
+                    currentRow.append(currentCell)
+                    currentCell = ""
+                } else if char == "\r" {
                     currentRow.append(currentCell)
                     rows.append(currentRow)
                     currentRow = []
                     currentCell = ""
+                    // Skip \n following \r for \r\n line endings
+                    if i + 1 < chars.count && chars[i + 1] == "\n" {
+                        i += 1
+                    }
+                } else if char == "\n" {
+                    currentRow.append(currentCell)
+                    rows.append(currentRow)
+                    currentRow = []
+                    currentCell = ""
+                } else {
+                    currentCell.append(char)
                 }
-            } else {
-                currentCell.append(char)
             }
+
+            i += 1
         }
 
         // Add last cell and row

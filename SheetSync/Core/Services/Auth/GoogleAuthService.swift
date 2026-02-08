@@ -67,24 +67,24 @@ class GoogleAuthService: NSObject, ObservableObject {
         let token = try await exchangeCodeForToken(code: code)
 
         // Save tokens
-        try tokenManager.saveToken(token)
+        try await tokenManager.saveToken(token)
 
         return token
     }
 
-    func signOut() {
-        tokenManager.clearTokens()
+    func signOut() async {
+        await tokenManager.clearTokens()
         KeychainHelper.shared.deleteUserEmail()
     }
 
     func getValidToken() async throws -> String {
-        guard let token = tokenManager.getToken() else {
+        guard let token = await tokenManager.getToken() else {
             throw SyncError.notAuthenticated
         }
 
         if token.isExpired {
             let refreshedToken = try await refreshToken(token)
-            try tokenManager.saveToken(refreshedToken)
+            try await tokenManager.saveToken(refreshedToken)
             return refreshedToken.accessToken
         }
 

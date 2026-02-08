@@ -11,11 +11,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @MainActor
     func applicationWillTerminate(_ notification: Notification) {
-        Task { @MainActor in
-            // Save any pending state
-            AppState.shared.saveSettings()
-        }
+        // Save synchronously - async Task would be cancelled before completing
+        AppState.shared.saveSettings()
     }
 
     func enableLaunchAtLogin() {

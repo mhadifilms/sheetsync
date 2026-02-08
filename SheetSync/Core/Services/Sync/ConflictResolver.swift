@@ -91,7 +91,8 @@ class ConflictResolver {
 
                 mergedData = SheetSnapshot(
                     googleSheetId: mergedData.googleSheetId,
-                    tabs: mergedData.tabs.merging([change.sheetTab: CellSnapshot(sheetTab: change.sheetTab, data: data)]) { _, new in new }
+                    tabs: mergedData.tabs.merging([change.sheetTab: CellSnapshot(sheetTab: change.sheetTab, data: data)]) { _, new in new },
+                    tabOrder: mergedData.tabOrder
                 )
             }
         }

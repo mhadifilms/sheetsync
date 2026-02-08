@@ -73,7 +73,7 @@ class AppState: ObservableObject {
     }
 
     func signOut() {
-        authService.signOut()
+        Task { await authService.signOut() }
         isAuthenticated = false
         userEmail = nil
         stopSyncEngine()

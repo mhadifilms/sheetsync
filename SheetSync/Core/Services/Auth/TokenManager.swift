@@ -1,7 +1,7 @@
 import Foundation
 
-class TokenManager {
-    nonisolated(unsafe) static let shared = TokenManager()
+actor TokenManager {
+    static let shared = TokenManager()
 
     private let keychainHelper = KeychainHelper.shared
     private let tokenKey = "com.sheetsync.authtoken"
@@ -9,7 +9,10 @@ class TokenManager {
     private var cachedToken: AuthToken?
 
     private init() {
-        loadCachedToken()
+        // Load token synchronously during init
+        if let data = keychainHelper.load(forKey: tokenKey) {
+            cachedToken = try? JSONDecoder().decode(AuthToken.self, from: data)
+        }
     }
 
     func saveToken(_ token: AuthToken) throws {

@@ -139,7 +139,7 @@ class SyncEngine: ObservableObject {
     }
 
     private func performSync(_ task: SyncTask) async {
-        let config = task.configuration
+        var config = task.configuration
 
         guard config.isEnabled else { return }
 
@@ -264,6 +264,8 @@ class SyncEngine: ObservableObject {
                         Logger.shared.info("First sync cancelled by user for \(config.googleSheetName)")
                         return
                     }
+                    // Re-read config since save dialog may have updated path/filename
+                    config = task.configuration
                 } else {
                     // Write remote data to local file
                     try await writeLocalFile(config, data: remoteData, conflicts: [])
@@ -408,6 +410,7 @@ class SyncEngine: ObservableObject {
             task.state.lastSyncTime = Date()
             task.state.nextSyncTime = Date().addingTimeInterval(config.syncFrequency)
             task.state.lastError = nil
+            task.consecutiveRetries = 0
 
             AppState.shared.updateSyncState(for: config.id, state: task.state)
             lastSyncTimes[config.id] = Date()  // Record sync time to prevent rapid re-syncs
@@ -419,14 +422,18 @@ class SyncEngine: ObservableObject {
             AppState.shared.updateSyncState(for: config.id, state: task.state)
             Logger.shared.error("Sync failed for \(config.googleSheetName): \(error)")
 
-            // Auto-retry for transient errors after delay
-            if error.isTransient {
+            // Auto-retry for transient errors after delay (with cap)
+            if error.isTransient && task.consecutiveRetries < SyncTask.maxRetries {
+                task.consecutiveRetries += 1
                 let retryDelay: TimeInterval = error.isRateLimitError ? 60 : 10
-                Logger.shared.info("Will retry \(config.googleSheetName) in \(Int(retryDelay))s")
+                Logger.shared.info("Will retry \(config.googleSheetName) in \(Int(retryDelay))s (attempt \(task.consecutiveRetries)/\(SyncTask.maxRetries))")
                 Task {
                     try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
                     await self.performSync(task)
                 }
+            } else if error.isTransient {
+                Logger.shared.error("Max retries (\(SyncTask.maxRetries)) reached for \(config.googleSheetName), giving up until next scheduled sync")
+                task.consecutiveRetries = 0
             } else if AppState.shared.settings.showNotifications {
                 NotificationManager.shared.showNotification(
                     title: "Sync Error",
@@ -439,13 +446,17 @@ class SyncEngine: ObservableObject {
             AppState.shared.updateSyncState(for: config.id, state: task.state)
             Logger.shared.error("Sync failed for \(config.googleSheetName): \(error)")
 
-            // Auto-retry for network errors
-            if (error as NSError).domain == NSURLErrorDomain {
-                Logger.shared.info("Network error, will retry \(config.googleSheetName) in 10s")
+            // Auto-retry for network errors (with cap)
+            if (error as NSError).domain == NSURLErrorDomain && task.consecutiveRetries < SyncTask.maxRetries {
+                task.consecutiveRetries += 1
+                Logger.shared.info("Network error, will retry \(config.googleSheetName) in 10s (attempt \(task.consecutiveRetries)/\(SyncTask.maxRetries))")
                 Task {
                     try? await Task.sleep(nanoseconds: 10_000_000_000)
                     await self.performSync(task)
                 }
+            } else if (error as NSError).domain == NSURLErrorDomain {
+                Logger.shared.error("Max retries reached for \(config.googleSheetName) after network errors")
+                task.consecutiveRetries = 0
             }
         }
     }
@@ -518,7 +529,9 @@ class SyncEngine: ObservableObject {
         case .xlsx:
             return try await fileManager.readXLSX(at: filePath, sheetId: config.googleSheetId)
         case .csv:
-            return try await fileManager.readCSV(at: filePath, sheetId: config.googleSheetId)
+            // Use the baseline's tab name so change detection matches correctly
+            let baselineTabName = changeDetector.getSnapshot(for: config.id)?.tabs.keys.first
+            return try await fileManager.readCSV(at: filePath, sheetId: config.googleSheetId, tabName: baselineTabName)
         case .json:
             return try await fileManager.readJSON(at: filePath, sheetId: config.googleSheetId)
         }
@@ -607,44 +620,19 @@ class SyncEngine: ObservableObject {
     }
 
     private func uploadChanges(_ config: SyncConfiguration, changes: [CellChange]) async throws {
-        // Get current sheet dimensions to know which rows need to be appended vs updated
-        let spreadsheet = try await sheetsClient.getSpreadsheet(id: config.googleSheetId)
-        var sheetRowCounts: [String: Int] = [:]
-        for sheet in spreadsheet.sheets {
-            let rowCount = sheet.properties.gridProperties?.rowCount ?? 1000
-            sheetRowCounts[sheet.properties.title] = rowCount
-        }
-
-        // Group changes by sheet tab
-        var changesByTab: [String: [CellChange]] = [:]
-        for change in changes {
-            changesByTab[change.sheetTab, default: []].append(change)
-        }
-
         // Build value ranges for batch update
+        // The Sheets API auto-expands the grid when writing beyond current bounds
         var valueRanges: [GoogleBatchUpdateRequest.ValueRange] = []
 
-        for (tab, tabChanges) in changesByTab {
-            let maxRow = sheetRowCounts[tab] ?? 1000
-
-            for change in tabChanges {
-                let rowNumber = change.row + 1  // Convert to 1-based
-
-                if rowNumber <= maxRow {
-                    // Row exists - update it
-                    // Quote tab name to handle spaces and special characters
-                    let quotedTab = "'\(tab.replacingOccurrences(of: "'", with: "''"))'"
-                    let range = "\(quotedTab)!\(CellChange.columnToLetter(change.column))\(rowNumber)"
-                    valueRanges.append(GoogleBatchUpdateRequest.ValueRange(
-                        range: range,
-                        values: [[change.newValue ?? ""]]
-                    ))
-                } else {
-                    // Row doesn't exist - we'll need to append
-                    // For simplicity, log a warning - appending requires full rows
-                    Logger.shared.warning("Skipping change at \(tab)!\(CellChange.columnToLetter(change.column))\(rowNumber) - row exceeds sheet size. Edit the sheet in Google to add more rows.")
-                }
-            }
+        for change in changes {
+            let rowNumber = change.row + 1  // Convert to 1-based
+            // Quote tab name to handle spaces and special characters
+            let quotedTab = "'\(change.sheetTab.replacingOccurrences(of: "'", with: "''"))'"
+            let range = "\(quotedTab)!\(CellChange.columnToLetter(change.column))\(rowNumber)"
+            valueRanges.append(GoogleBatchUpdateRequest.ValueRange(
+                range: range,
+                values: [[change.newValue ?? ""]]
+            ))
         }
 
         if !valueRanges.isEmpty {
@@ -663,6 +651,8 @@ class SyncEngine: ObservableObject {
 class SyncTask {
     var configuration: SyncConfiguration
     var state: SyncState
+    var consecutiveRetries: Int = 0
+    static let maxRetries = 5
 
     init(configuration: SyncConfiguration) {
         self.configuration = configuration

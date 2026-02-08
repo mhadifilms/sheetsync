@@ -97,7 +97,7 @@ class GoogleSheetsAPIClient: ObservableObject {
             throw SyncError.apiError(400, "Invalid range format")
         }
         components.queryItems = [
-            URLQueryItem(name: "valueRenderOption", value: "UNFORMATTED_VALUE"),
+            URLQueryItem(name: "valueRenderOption", value: "FORMATTED_VALUE"),
             URLQueryItem(name: "dateTimeRenderOption", value: "FORMATTED_STRING")
         ]
 
@@ -115,7 +115,7 @@ class GoogleSheetsAPIClient: ObservableObject {
             throw SyncError.apiError(400, "Invalid spreadsheet ID for batch get")
         }
         var queryItems = ranges.map { URLQueryItem(name: "ranges", value: $0) }
-        queryItems.append(URLQueryItem(name: "valueRenderOption", value: "UNFORMATTED_VALUE"))
+        queryItems.append(URLQueryItem(name: "valueRenderOption", value: "FORMATTED_VALUE"))
         queryItems.append(URLQueryItem(name: "dateTimeRenderOption", value: "FORMATTED_STRING"))
         components.queryItems = queryItems
 

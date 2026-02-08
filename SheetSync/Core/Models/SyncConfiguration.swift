@@ -82,11 +82,11 @@ struct SyncConfiguration: Codable, Identifiable, Hashable {
     }
 
     /// Resolves the security-scoped bookmark and returns the URL with access started.
-    /// Call `stopAccessingSecurityScopedResource()` on the returned URL when done.
+    /// Returns `nil` if no bookmark or resolution failed — callers should fall back to `localFilePath`.
+    /// Call `stopAccessingSecurityScopedResource()` on the returned URL when done (only if non-nil).
     func resolveBookmark() -> URL? {
         guard let bookmarkData = bookmarkData else {
-            // No bookmark stored - use localFilePath directly (works for non-sandboxed paths)
-            return localFilePath
+            return nil
         }
 
         var isStale = false
@@ -99,20 +99,19 @@ struct SyncConfiguration: Codable, Identifiable, Hashable {
             )
 
             if isStale {
-                Logger.shared.debug("Bookmark is stale for \(url.lastPathComponent), will use direct path")
+                Logger.shared.debug("Bookmark is stale for \(url.lastPathComponent)")
             }
 
             if url.startAccessingSecurityScopedResource() {
                 return url
+            } else {
+                Logger.shared.debug("Failed to start security scope for \(url.lastPathComponent)")
             }
         } catch {
-            // Bookmark resolution failed - fall back to direct path access
-            // This is common after app updates or when files are on non-sandboxed volumes
-            Logger.shared.debug("Bookmark unavailable, using direct path for \(localFilePath.lastPathComponent)")
+            Logger.shared.debug("Bookmark unavailable for \(localFilePath.lastPathComponent): \(error)")
         }
 
-        // Fall back to localFilePath - works for files on accessible volumes
-        return localFilePath
+        return nil
     }
 
     /// Creates a security-scoped bookmark for the given URL
