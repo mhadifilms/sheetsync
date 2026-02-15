@@ -12,6 +12,8 @@ struct SyncSettingsView: View {
     @State private var backupEnabled: Bool
     @State private var backupFrequency: Int
     @State private var showDeleteConfirmation = false
+    @State private var customFileName: String
+    @State private var localFilePath: URL
 
     init(configuration: SyncConfiguration) {
         self.configuration = configuration
@@ -20,6 +22,8 @@ struct SyncSettingsView: View {
         _isEnabled = State(initialValue: configuration.isEnabled)
         _backupEnabled = State(initialValue: configuration.backupSettings.isEnabled)
         _backupFrequency = State(initialValue: configuration.backupSettings.frequencyHours)
+        _customFileName = State(initialValue: configuration.customFileName ?? "")
+        _localFilePath = State(initialValue: configuration.localFilePath)
     }
 
     var body: some View {
@@ -49,17 +53,31 @@ struct SyncSettingsView: View {
                 }
 
                 Section("Local File") {
-                    LabeledContent("Path", value: configuration.fullLocalPath.path)
-                        .lineLimit(2)
+                    HStack {
+                        Text("Save Location")
+                        Spacer()
+                        Text(localFilePath.path)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Button("Change...") {
+                            chooseSaveLocation()
+                        }
+                    }
+
+                    TextField("File Name", text: $customFileName, prompt: Text(configuration.googleSheetName))
 
                     HStack {
                         Text("Open")
                         Spacer()
                         Button("In Finder") {
-                            NSWorkspace.shared.selectFile(
-                                configuration.fullLocalPath.path,
-                                inFileViewerRootedAtPath: configuration.localFilePath.path
-                            )
+                            let filePath = configuration.fullLocalPath
+                            if FileManager.default.fileExists(atPath: filePath.path) {
+                                NSWorkspace.shared.selectFile(filePath.path, inFileViewerRootedAtPath: configuration.localFilePath.path)
+                            } else {
+                                NSWorkspace.shared.open(configuration.localFilePath)
+                            }
                         }
                         Button("File") {
                             NSWorkspace.shared.open(configuration.fullLocalPath)
@@ -144,9 +162,27 @@ struct SyncSettingsView: View {
         updatedConfig.isEnabled = isEnabled
         updatedConfig.backupSettings.isEnabled = backupEnabled
         updatedConfig.backupSettings.frequencyHours = backupFrequency
+        updatedConfig.customFileName = customFileName.isEmpty ? nil : customFileName
+        updatedConfig.localFilePath = localFilePath
+        if localFilePath != configuration.localFilePath {
+            updatedConfig.bookmarkData = SyncConfiguration.createBookmark(for: localFilePath)
+        }
 
         appState.updateSyncConfiguration(updatedConfig)
         dismiss()
+    }
+
+    private func chooseSaveLocation() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Select Folder"
+        panel.directoryURL = localFilePath
+
+        if panel.runModal() == .OK, let url = panel.url {
+            localFilePath = url
+        }
     }
 
     private func deleteSync() {

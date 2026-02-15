@@ -8,6 +8,7 @@ struct AppSettings: Codable {
     var defaultFileFormat: FileFormat
     var autoBackupEnabled: Bool
     var backupFrequencyHours: Int
+    var globalSyncPaused: Bool
     var customGoogleClientId: String?  // For users building from source
 
     init(
@@ -18,6 +19,7 @@ struct AppSettings: Codable {
         defaultFileFormat: FileFormat = .xlsx,
         autoBackupEnabled: Bool = true,
         backupFrequencyHours: Int = 5,
+        globalSyncPaused: Bool = false,
         customGoogleClientId: String? = nil
     ) {
         self.launchAtLogin = launchAtLogin
@@ -27,6 +29,7 @@ struct AppSettings: Codable {
         self.defaultFileFormat = defaultFileFormat
         self.autoBackupEnabled = autoBackupEnabled
         self.backupFrequencyHours = backupFrequencyHours
+        self.globalSyncPaused = globalSyncPaused
         self.customGoogleClientId = customGoogleClientId
     }
 

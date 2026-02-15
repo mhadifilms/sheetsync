@@ -82,6 +82,18 @@ struct MainPopoverView: View {
             Spacer()
 
             if appState.isAuthenticated {
+                Button {
+                    appState.toggleGlobalPause()
+                } label: {
+                    Image(systemName: appState.settings.globalSyncPaused ? "play.circle.fill" : "pause.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(appState.settings.globalSyncPaused ? .green : .secondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(appState.settings.globalSyncPaused ? "Resume all syncs" : "Pause all syncs")
+
                 Menu {
                     Button {
                         openSettingsWindow()

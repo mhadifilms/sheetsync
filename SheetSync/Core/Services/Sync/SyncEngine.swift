@@ -14,7 +14,7 @@ class SyncEngine: ObservableObject {
     private var fileWatcher: FileWatcher?
     private var cancellables = Set<AnyCancellable>()
     private var syncingConfigs: Set<UUID> = []  // Track configs currently syncing
-    private var lastSyncTimes: [UUID: Date] = [:]  // Track when configs were last synced
+    private var lastSyncTimes: [UUID: Date]  // Track when configs were last synced (persisted)
     private var lastRemoteModifiedTimes: [UUID: Date] = [:]  // Track remote sheet modification times
     private let minimumSyncInterval: TimeInterval = 3.0  // Minimum seconds between syncs
 
@@ -24,7 +24,27 @@ class SyncEngine: ObservableObject {
     private let backupManager = BackupManager.shared
 
     init() {
+        // Load persisted last sync times
+        if let data = UserDefaults.standard.data(forKey: "lastSyncTimes"),
+           let decoded = try? JSONDecoder().decode([String: Date].self, from: data) {
+            var times: [UUID: Date] = [:]
+            for (key, value) in decoded {
+                if let uuid = UUID(uuidString: key) {
+                    times[uuid] = value
+                }
+            }
+            self.lastSyncTimes = times
+        } else {
+            self.lastSyncTimes = [:]
+        }
         setupFileWatcher()
+    }
+
+    private func persistLastSyncTimes() {
+        let stringKeyed = Dictionary(uniqueKeysWithValues: lastSyncTimes.map { ($0.key.uuidString, $0.value) })
+        if let data = try? JSONEncoder().encode(stringKeyed) {
+            UserDefaults.standard.set(data, forKey: "lastSyncTimes")
+        }
     }
 
     func start() {
@@ -142,6 +162,7 @@ class SyncEngine: ObservableObject {
         var config = task.configuration
 
         guard config.isEnabled else { return }
+        guard !AppState.shared.settings.globalSyncPaused else { return }
 
         // Prevent concurrent syncs for same config using set
         guard !syncingConfigs.contains(config.id) else {
@@ -223,6 +244,7 @@ class SyncEngine: ObservableObject {
                             task.state.nextSyncTime = Date().addingTimeInterval(config.syncFrequency)
                             AppState.shared.updateSyncState(for: config.id, state: task.state)
                             lastSyncTimes[config.id] = Date()
+                            persistLastSyncTimes()
                             return
                         } else {
                             // Local changes detected - need to upload
@@ -236,6 +258,7 @@ class SyncEngine: ObservableObject {
                             task.state.lastChangeDirection = .upload
                             AppState.shared.updateSyncState(for: config.id, state: task.state)
                             lastSyncTimes[config.id] = Date()
+                            persistLastSyncTimes()
                             Logger.shared.info("Sync completed for \(config.googleSheetName)")
                             return
                         }
@@ -243,19 +266,48 @@ class SyncEngine: ObservableObject {
                 }
             }
 
+            // Capture whether this is a cold start (first sync this session) before we update any state
+            let isFirstSyncThisSession = lastRemoteModifiedTimes[config.id] == nil
+
             // Step 1: Fetch current data from Google Sheets (full fetch needed)
             Logger.shared.debug("Full fetch for \(config.googleSheetName)")
-            let remoteData = try await fetchRemoteData(config)
+            let (remoteData, remoteTitle) = try await fetchRemoteData(config)
 
             // Update last known modification time (use current time as approximation to avoid extra API call)
             lastRemoteModifiedTimes[config.id] = Date()
 
-            // Step 3: Handle FIRST SYNC specially - remote is authoritative
-            if storedSnapshot == nil {
-                Logger.shared.info("First sync for \(config.googleSheetName) - using remote data as baseline")
+            // Detect remote sheet rename
+            if remoteTitle != config.googleSheetName {
+                let oldPath = config.fullLocalPath
+                config.googleSheetName = remoteTitle
+                // Rename local file if using default name (no custom name set)
+                if config.customFileName == nil {
+                    let newPath = config.fullLocalPath
+                    if FileManager.default.fileExists(atPath: oldPath.path) {
+                        try? FileManager.default.moveItem(at: oldPath, to: newPath)
+                        Logger.shared.info("Renamed local file: \(oldPath.lastPathComponent) → \(newPath.lastPathComponent)")
+                    }
+                }
+                task.configuration = config
+                AppState.shared.updateSyncConfiguration(config)
+                Logger.shared.info("Sheet renamed: \(remoteTitle)")
+            }
+
+            // Step 3: Handle FIRST SYNC or COLD START specially - remote is authoritative
+            // If no lastSyncTime in memory, this is the first sync after app restart/resume —
+            // treat remote as source of truth to avoid uploading stale local diffs
+            let isColdStart = isFirstSyncThisSession && storedSnapshot != nil
+            if isColdStart {
+                Logger.shared.info("Cold start for \(config.googleSheetName) - using remote as source of truth (no upload)")
+            }
+            if storedSnapshot == nil || isColdStart {
+                if storedSnapshot == nil {
+                    Logger.shared.info("First sync for \(config.googleSheetName) - using remote data as baseline")
+                }
 
                 // Show save dialog on first sync if needed (handles existing file confirmation)
-                if config.needsInitialFileConfirmation {
+                // Skip for cold starts — file already exists from previous sessions
+                if config.needsInitialFileConfirmation && !isColdStart {
                     let confirmed = await showFirstSyncSaveDialog(config, data: remoteData)
                     if !confirmed {
                         task.state.status = .paused
@@ -324,6 +376,7 @@ class SyncEngine: ObservableObject {
                     task.state.lastError = nil
                     AppState.shared.updateSyncState(for: config.id, state: task.state)
                     lastSyncTimes[config.id] = Date()
+                    persistLastSyncTimes()
                     return
                 }
 
@@ -413,7 +466,8 @@ class SyncEngine: ObservableObject {
             task.consecutiveRetries = 0
 
             AppState.shared.updateSyncState(for: config.id, state: task.state)
-            lastSyncTimes[config.id] = Date()  // Record sync time to prevent rapid re-syncs
+            lastSyncTimes[config.id] = Date()
+            persistLastSyncTimes()
             Logger.shared.info("Sync completed for \(config.googleSheetName)")
 
         } catch let error as SyncError {
@@ -461,7 +515,7 @@ class SyncEngine: ObservableObject {
         }
     }
 
-    private func fetchRemoteData(_ config: SyncConfiguration) async throws -> SheetSnapshot {
+    private func fetchRemoteData(_ config: SyncConfiguration) async throws -> (SheetSnapshot, String) {
         let spreadsheet: GoogleSpreadsheetResponse
         do {
             spreadsheet = try await sheetsClient.getSpreadsheet(id: config.googleSheetId)
@@ -513,7 +567,7 @@ class SyncEngine: ObservableObject {
             Logger.shared.warning("Large sheet detected: \(config.googleSheetName) (\(totalRows) rows, \(totalCols) cols) - sync may be slow")
         }
 
-        return SheetSnapshot(googleSheetId: config.googleSheetId, tabs: tabs, tabOrder: tabOrder)
+        return (SheetSnapshot(googleSheetId: config.googleSheetId, tabs: tabs, tabOrder: tabOrder), spreadsheet.properties.title)
     }
 
     private func readLocalFile(_ config: SyncConfiguration) async throws -> SheetSnapshot {

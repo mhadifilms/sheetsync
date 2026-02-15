@@ -25,6 +25,7 @@ struct SyncItemRow: View {
 
     @EnvironmentObject var appState: AppState
     @State private var isHovered = false
+    @State private var isPauseHovered = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -65,12 +66,28 @@ struct SyncItemRow: View {
             // Actions with glass effect
             HStack(spacing: 6) {
                 Button {
+                    appState.toggleSyncPause(configuration.id)
+                } label: {
+                    if state.status == .paused {
+                        LucideIcon(AppIcon.play, size: 12, color: .green)
+                    } else {
+                        LucideIcon(AppIcon.pause, size: 12, color: isPauseHovered ? .orange : .primary)
+                    }
+                }
+                .buttonStyle(.glassIcon(size: 24))
+                .disabled(appState.settings.globalSyncPaused)
+                .onHover { hovering in
+                    isPauseHovered = hovering
+                }
+                .help(state.status == .paused ? "Resume sync" : "Pause sync")
+
+                Button {
                     triggerSync()
                 } label: {
                     LucideIcon(AppIcon.refreshCw, size: 12, color: .primary)
                 }
                 .buttonStyle(.glassIcon(size: 24))
-                .disabled(state.status == .syncing)
+                .disabled(state.status == .syncing || state.status == .paused)
                 .help("Sync now")
 
                 Button {
@@ -145,10 +162,14 @@ struct SyncItemRow: View {
     }
 
     private func openLocalFile() {
-        NSWorkspace.shared.selectFile(
-            configuration.fullLocalPath.path,
-            inFileViewerRootedAtPath: configuration.localFilePath.path
-        )
+        let filePath = configuration.fullLocalPath
+        if FileManager.default.fileExists(atPath: filePath.path) {
+            NSWorkspace.shared.selectFile(filePath.path, inFileViewerRootedAtPath: configuration.localFilePath.path)
+        } else if FileManager.default.fileExists(atPath: configuration.localFilePath.path) {
+            NSWorkspace.shared.open(configuration.localFilePath)
+        } else {
+            NSSound.beep()
+        }
     }
 
     private func openGoogleSheet() {

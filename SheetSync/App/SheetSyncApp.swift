@@ -103,7 +103,50 @@ class AppState: ObservableObject {
         }
     }
 
+    func toggleSyncPause(_ configId: UUID) {
+        guard let index = syncConfigurations.firstIndex(where: { $0.id == configId }) else { return }
+        syncConfigurations[index].isEnabled.toggle()
+        saveSyncConfigurations()
+
+        if syncConfigurations[index].isEnabled {
+            syncStates[configId]?.status = .idle
+            syncEngine.updateSync(syncConfigurations[index])
+        } else {
+            syncStates[configId]?.status = .paused
+            syncEngine.updateSync(syncConfigurations[index])
+        }
+        updateOverallStatus()
+    }
+
+    func toggleGlobalPause() {
+        settings.globalSyncPaused.toggle()
+        saveSettings()
+
+        if settings.globalSyncPaused {
+            syncEngine.stop()
+            for id in syncStates.keys {
+                syncStates[id]?.status = .paused
+            }
+            overallStatus = .paused
+            Logger.shared.info("All syncs paused")
+        } else {
+            for id in syncStates.keys {
+                syncStates[id]?.status = .idle
+            }
+            startSyncEngine()
+            Logger.shared.info("All syncs resumed")
+        }
+    }
+
     private func startSyncEngine() {
+        guard !settings.globalSyncPaused else {
+            for id in syncStates.keys {
+                syncStates[id]?.status = .paused
+            }
+            overallStatus = .paused
+            Logger.shared.info("Sync engine not started - globally paused")
+            return
+        }
         for config in syncConfigurations where config.isEnabled {
             syncEngine.addSync(config)
         }
